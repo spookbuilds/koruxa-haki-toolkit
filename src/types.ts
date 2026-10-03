@@ -19,26 +19,6 @@ export interface EquipmentItem {
   [key: string]: unknown
 }
 
-export interface KoruxaMe {
-  id: number
-  username: string
-  total_level: number
-  total_xp: number
-  combat_level: number
-  skills: SkillStat[]
-  equipment: EquipmentItem[]
-  farms?: Array<{ skill_key: string; level: number }>
-  research?: { unlocked?: boolean; total_levels?: number; [key: string]: unknown }
-  private?: {
-    research?: { bonuses?: Record<string, number>; nodes?: unknown[] }
-    mastery?: { actions?: unknown[]; xp_boost?: number }
-    clan_bank?: Record<string, unknown>
-    [key: string]: unknown
-  }
-  clan?: { id: number; name: string; tag: string; role: string }
-  [key: string]: unknown
-}
-
 export interface SkillIngredient {
   item_key: string
   quantity: number
@@ -62,7 +42,7 @@ export interface SkillAction {
   category?: string | null
   ingredients: SkillIngredient[] | null
   reward_stats?: Record<string, unknown> | null
-  unlock_reqs?: unknown[] | null
+  unlock_reqs?: Array<{ type?: string; label?: string; target?: number }> | null
 }
 
 export interface MaterialNode {
@@ -82,8 +62,13 @@ export interface Profile {
   koruxa_name: string | null
   app_role: AppRole
   discord_user_id: string | null
+  discord_username?: string | null
+  discord_global_name?: string | null
+  discord_avatar?: string | null
   active: boolean
   koruxa_connected?: boolean
+  clan_verified?: boolean
+  last_koruxa_sync_at?: string | null
 }
 
 export interface OrderCategory {
@@ -92,6 +77,7 @@ export interface OrderCategory {
   description: string | null
   enabled: boolean
   discord_channel_id: string | null
+  sort_order?: number
 }
 
 export interface ClanOrder {
