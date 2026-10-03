@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { apiGet } from '../lib/api'
 
 type Row = { skill_key: string; profile_id: string; koruxa_name: string; level: number; xp: number; rank: number }
 type GainRow = { skill_key: string; profile_id: string; koruxa_name: string; xp_gain: number; level_now: number }
@@ -10,14 +10,9 @@ export default function LeaderboardsPage() {
   const [days, setDays] = useState(7)
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return
-    supabase.from('skill_leaderboard').select('*').lte('rank', 3).order('skill_key').order('rank').then(({ data }) => setRows((data ?? []) as Row[]))
-  }, [])
-
-  useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return
-    const since = new Date(Date.now() - days * 86400000).toISOString()
-    supabase.rpc('skill_xp_gains', { since_at: since }).then(({ data }) => setGains((data ?? []) as GainRow[]))
+    apiGet<{ current: Row[]; gains: GainRow[] }>('/api/leaderboards?days=' + days)
+      .then((data) => { setRows(data.current ?? []); setGains(data.gains ?? []) })
+      .catch(console.error)
   }, [days])
 
   const groups = useMemo(() => rows.reduce<Record<string, Row[]>>((acc, row) => {
@@ -67,7 +62,7 @@ export default function LeaderboardsPage() {
           {Object.entries(gainGroups).map(([skill, entries]) => (
             <article className="panel compact" key={'gain-' + skill}>
               <h2 className="capitalize">{skill}</h2>
-              {entries.slice(0, 3).map((row, index) => (
+              {entries.sort((a, b) => b.xp_gain - a.xp_gain).slice(0, 3).map((row, index) => (
                 <div className="podium-row" key={row.profile_id}>
                   <span className="rank-badge">{['🥇', '🥈', '🥉'][index]}</span>
                   <div><strong>{row.koruxa_name}</strong><span>+{Number(row.xp_gain).toLocaleString()} XP · Level {row.level_now}</span></div>
