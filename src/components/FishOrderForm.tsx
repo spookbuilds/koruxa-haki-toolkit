@@ -1,5 +1,6 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { fishCatalogue, fishPrice } from '../data/orderForms'
+import { fishEmoji } from '../data/orderVisuals'
 
 type Line = { id: string; fish: string; preparation: 'raw' | 'cooked'; quantity: number; unitPrice: number }
 
@@ -27,9 +28,10 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
       quantity: line.quantity,
       unit_price: line.unitPrice,
       line_total: line.quantity * line.unitPrice,
-      description: line.quantity.toLocaleString() + ' × ' + (line.preparation === 'raw' ? 'Raw ' : 'Cooked ') + line.fish,
+      emoji: fishEmoji[line.fish] ?? '🐟',
+      description: (fishEmoji[line.fish] ?? '🐟') + ' ' + line.quantity.toLocaleString() + ' × ' + (line.preparation === 'raw' ? 'Raw ' : 'Cooked ') + line.fish,
     }))
-    await onSubmit('Fish order · ' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ' · ' + total.toLocaleString() + ' GP', {
+    await onSubmit('Fish order · ' + total.toLocaleString() + ' GP', {
       form: 'fish',
       lines: payloadLines,
       total_gp: total,
@@ -45,38 +47,50 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
         <div className="board-heading fish-heading">
           <span>HAKI FISH MARKET</span>
           <h2>Fresh Catch Order Board</h2>
-          <p>Build a mixed raw or cooked fish order with live pricing.</p>
+          <p>Click the fish you want, choose raw or cooked, then build one complete order.</p>
         </div>
 
-        <div className="flash-form-grid">
-          <label>Fish
-            <select value={fish} onChange={(e) => setFish(e.target.value)}>
-              {fishCatalogue.map((entry) => <option key={entry.name}>{entry.name}</option>)}
-            </select>
-          </label>
-          <label>Preparation
-            <select value={preparation} onChange={(e) => setPreparation(e.target.value as 'raw' | 'cooked')}>
-              <option value="raw">Raw</option>
-              <option value="cooked">Cooked</option>
-            </select>
-          </label>
-          <label>Quantity
-            <input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} />
-          </label>
-          <div className="price-preview flashy">
-            <span>Unit price</span>
-            <strong>{fishPrice(fish, preparation).toLocaleString()} GP</strong>
+        <section className="item-button-group">
+          <div className="item-button-group-title"><span>CHOOSE A FISH</span><small>{fishCatalogue.length} available</small></div>
+          <div className="item-button-grid fish-button-grid">
+            {fishCatalogue.map((entry) => (
+              <button
+                type="button"
+                key={entry.name}
+                className={fish === entry.name ? 'item-choice active' : 'item-choice'}
+                onClick={() => setFish(entry.name)}
+              >
+                <span className="item-choice-emoji">{fishEmoji[entry.name] ?? '🐟'}</span>
+                <span><strong>{entry.name}</strong><small>{fishPrice(entry.name, preparation).toLocaleString()} GP {preparation}</small></span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <div className="selected-order-builder compact-builder">
+          <div className="selected-item-head">
+            <div className="selected-item-icon">{fishEmoji[fish] ?? '🐟'}</div>
+            <div><span className="eyebrow">SELECTED FISH</span><h3>{fish}</h3><small>{fishPrice(fish, preparation).toLocaleString()} GP each</small></div>
+          </div>
+
+          <div className="choice-toggle-row">
+            <button type="button" className={preparation === 'raw' ? 'choice-toggle active' : 'choice-toggle'} onClick={() => setPreparation('raw')}>🧊 Raw</button>
+            <button type="button" className={preparation === 'cooked' ? 'choice-toggle active' : 'choice-toggle'} onClick={() => setPreparation('cooked')}>🍳 Cooked</button>
+          </div>
+
+          <div className="selected-item-controls">
+            <label>Quantity<input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} /></label>
+            <div className="receive-preview"><span>Line total</span><strong>{(Math.max(1, quantity) * fishPrice(fish, preparation)).toLocaleString()} GP</strong></div>
+            <button className="exchange-add" type="button" onClick={add}>+ Add fish</button>
           </div>
         </div>
 
-        <button className="exchange-add" type="button" onClick={add}>+ Add to fish order</button>
-
         <div className="order-preview-board">
-          <div className="order-preview-title"><span>LIVE ORDER PREVIEW</span><strong>{lines.length} line{lines.length === 1 ? '' : 's'}</strong></div>
+          <div className="order-preview-title"><span>LIVE ORDER PREVIEW</span><strong>{lines.length} item{lines.length === 1 ? '' : 's'}</strong></div>
           {lines.length ? lines.map((line) => (
             <div className="preview-row" key={line.id}>
               <div>
-                <strong>{line.quantity.toLocaleString()} × {line.preparation === 'raw' ? 'Raw ' : 'Cooked '}{line.fish}</strong>
+                <strong>{fishEmoji[line.fish] ?? '🐟'} {line.quantity.toLocaleString()} × {line.preparation === 'raw' ? 'Raw ' : 'Cooked '}{line.fish}</strong>
                 <small>{line.unitPrice.toLocaleString()} GP each</small>
               </div>
               <div className="preview-row-actions">
@@ -84,7 +98,7 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
                 <button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.id !== line.id))}>Remove</button>
               </div>
             </div>
-          )) : <p className="empty">Add fish above to build your order.</p>}
+          )) : <p className="empty">Click a fish above and add it to the order.</p>}
           {lines.length ? <div className="flash-total"><span>ORDER TOTAL</span><strong>{total.toLocaleString()} GP</strong></div> : null}
         </div>
 
@@ -97,20 +111,15 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
       <aside className="order-board-sidebar">
         <div className="flash-card blue">
           <span className="flash-icon">🐟</span>
-          <div><strong>Raw pricing</strong><p>Raw fish cost half the cooked price, rounded up to the nearest 50 GP.</p></div>
+          <div><strong>One complete order</strong><p>Mix as many fish types as you need in one request instead of creating lots of separate orders.</p></div>
         </div>
         <div className="flash-card gold">
-          <span className="flash-icon">✦</span>
-          <div><strong>Mixed baskets</strong><p>Add multiple fish types and mix raw/cooked lines in one complete order.</p></div>
+          <span className="flash-icon">🧊</span>
+          <div><strong>Raw pricing</strong><p>Raw fish cost half the cooked price, rounded up to the nearest 50 GP.</p></div>
         </div>
-        <div className="price-reference">
-          <div className="price-reference-title">PRICE QUICK LOOK</div>
-          {fishCatalogue.slice(0, 8).map((entry) => (
-            <div className="price-reference-row" key={entry.name}>
-              <span>{entry.name}</span><strong>{entry.cookedPrice.toLocaleString()}</strong>
-            </div>
-          ))}
-          <small>Cooked prices shown · full list available in the selector</small>
+        <div className="flash-card blue">
+          <span className="flash-icon">✓</span>
+          <div><strong>Tracked in the toolkit</strong><p>Your full basket stays visible in My Requests and the Discord order card.</p></div>
         </div>
       </aside>
     </form>
