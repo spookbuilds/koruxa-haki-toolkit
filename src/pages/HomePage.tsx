@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import StatCard from '../components/StatCard'
 import { getOrders } from '../lib/data'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { apiGet } from '../lib/api'
 import type { ClanOrder } from '../types'
 
 export default function HomePage() {
@@ -10,11 +10,15 @@ export default function HomePage() {
   const [watch, setWatch] = useState<any[]>([])
 
   useEffect(() => {
-    getOrders().then(setOrders).catch(console.error)
-    if (isSupabaseConfigured && supabase) {
-      supabase.from('clan_state').select('*').eq('id', 1).maybeSingle().then(({ data }) => setClan(data))
-      supabase.from('bank_watch_status').select('*').eq('show_on_home', true).order('display_name').then(({ data }) => setWatch(data ?? []))
-    }
+    Promise.all([
+      getOrders(),
+      apiGet<{ state: any }>('/api/clan/state'),
+      apiGet<{ watch: any[] }>('/api/bank/watch'),
+    ]).then(([orderRows, clanResult, watchResult]) => {
+      setOrders(orderRows)
+      setClan(clanResult.state)
+      setWatch((watchResult.watch ?? []).filter((item) => item.show_on_home))
+    }).catch(console.error)
   }, [])
 
   const working = useMemo(() => orders.filter((o) => ['claimed', 'in_progress'].includes(o.status)), [orders])
@@ -29,8 +33,8 @@ export default function HomePage() {
     <div className="page">
       <header className="page-header"><div><span className="eyebrow">STRAWHATS [HAKI]</span><h1>Clan Home</h1><p className="muted">Live clan status, work queue and the stock you actually care about.</p></div></header>
       <section className="stat-grid">
-        <StatCard label="Clan level" value={xp?.level ?? 35} hint={xp ? String(xp.progress_pct) + '% to level ' + String(xp.level + 1) : 'Connect clan API to sync live'} />
-        <StatCard label="Members" value={clanData?.clan?.member_count ?? 37} hint="Roster syncs from Koruxa" />
+        <StatCard label="Clan level" value={xp?.level ?? '—'} hint={xp ? String(xp.progress_pct) + '% to level ' + String(xp.level + 1) : 'Run the first clan sync in Admin'} />
+        <StatCard label="Members" value={clanData?.clan?.member_count ?? '—'} hint="Roster syncs from Koruxa" />
         <StatCard label="Open orders" value={open.length} hint={String(working.length) + ' being worked'} />
         <StatCard label="Ready" value={ready.length} hint="Ready for collection" />
       </section>
@@ -47,7 +51,7 @@ export default function HomePage() {
           <div className="panel-title"><div><span className="eyebrow">LIVE WORK</span><h2>Currently working on</h2></div></div>
           {working.length ? working.map((order) => (
             <div className="list-row" key={order.id}>
-              <div><strong>{order.summary}</strong><span>for {order.requester?.koruxa_name ?? 'Clan member'}</span></div>
+              <div><strong>{order.summary}</strong><span>for {order.requester?.koruxa_name ?? order.requester?.display_name ?? 'Clan member'}</span></div>
               <span className="pill warning">{order.status.replace('_', ' ')}</span>
             </div>
           )) : <p className="empty">Nobody has a claimed order right now.</p>}
@@ -67,7 +71,7 @@ export default function HomePage() {
       <div className="two-column">
         <section className="panel">
           <div className="panel-title"><div><span className="eyebrow">READY</span><h2>Waiting for collection</h2></div></div>
-          {ready.length ? ready.slice(0, 8).map((order) => <div className="list-row" key={order.id}><div><strong>{order.summary}</strong><span>{order.requester?.koruxa_name ?? 'Clan member'}</span></div><span className="pill success">ready</span></div>) : <p className="empty">Nothing waiting for collection.</p>}
+          {ready.length ? ready.slice(0, 8).map((order) => <div className="list-row" key={order.id}><div><strong>{order.summary}</strong><span>{order.requester?.koruxa_name ?? order.requester?.display_name ?? 'Clan member'}</span></div><span className="pill success">ready</span></div>) : <p className="empty">Nothing waiting for collection.</p>}
         </section>
         <section className="panel">
           <div className="panel-title"><div><span className="eyebrow">AUGMENT VAULT</span><h2>Capacity</h2></div></div>
