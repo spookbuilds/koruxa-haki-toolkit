@@ -301,6 +301,7 @@ export async function sendOrderDiscord(env, orderId, event) {
     content = '🔔 ' + mention + '**your order is ready!**\n' + order.summary + '\nCompleted by ' + (order.fulfiller_name || 'a clan member')
   }
   if (event === 'collected') content = '**Order collected**\n' + order.requester_name + ': ' + order.summary
+  if (event === 'cancelled') content = '❌ **Order cancelled**\n' + order.requester_name + ': ' + order.summary
   if (!content) return { skipped: true, reason: 'Unsupported Discord event' }
 
   const result = await sendDiscordMessage(env, String(order.discord_channel_id), content, allowedUsers)
