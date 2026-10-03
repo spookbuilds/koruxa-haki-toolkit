@@ -79,7 +79,7 @@ export default function BankPage() {
             const qty = Number(entry.quantity ?? entry.qty ?? 0)
             const action = String(entry.action ?? entry.type ?? entry.event ?? '').toLowerCase()
             const prefix = action.includes('withdraw') ? '−' : '+'
-            return <div className="list-row" key={String(entry.id ?? index)}><div><strong>{prefix}{Math.abs(qty).toLocaleString()} {entry.item_name ?? entry.name ?? entry.item_key ?? 'Item'}</strong><span>{entry.character ?? entry.character_name ?? entry.username ?? 'Clan member'} · {action || 'bank activity'}</span></div><span className="muted">{entry.created_at ? new Date(entry.created_at).toLocaleString() : entry.timestamp ? new Date(entry.timestamp).toLocaleString() : ''}</span></div>
+            return <div className="list-row" key={String(entry.id ?? index)}><div><strong>{prefix}{Math.abs(qty).toLocaleString()} {entry.item_name ?? entry.name ?? entry.item_key ?? 'Item'}</strong><span>{entry.character ?? entry.character_name ?? entry.username ?? 'Clan member'} · {action || 'bank activity'}</span></div><span className="muted">{entry.created_at ? new Date(entry.created_at).toLocaleString() : entry.at ? new Date(entry.at).toLocaleString() : entry.timestamp ? new Date(entry.timestamp).toLocaleString() : ''}</span></div>
           }) : <p className="empty">Sync the clan bank to load recent activity.</p>}
         </section>
       </div>

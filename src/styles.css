@@ -134,3 +134,19 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
   .toolbar select, .small-select { width: 100%; }
   .list-row { align-items: flex-start; }
 }
+
+.research-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.research-card { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 11px 12px; border: 1px solid #342a41; background: #17121f; border-radius: 10px; }
+.research-card div { min-width: 0; }
+.research-card strong, .research-card span { display: block; }
+.research-card div span { color: #8f839c; font-size: .75rem; margin-top: 3px; }
+.modifier-form { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 10px; }
+.modifier-form .wide-field { grid-column: span 2; }
+.target-materials { margin-top: 22px; padding-top: 18px; border-top: 1px solid #342a41; }
+@media (max-width: 1000px) {
+  .research-grid, .modifier-form { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 680px) {
+  .research-grid, .modifier-form { grid-template-columns: 1fr; }
+  .modifier-form .wide-field { grid-column: auto; }
+}
