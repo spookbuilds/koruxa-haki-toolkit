@@ -70,7 +70,7 @@ export default function BankPage() {
           <div className="chip-wrap">{Object.entries(augments.reduce((acc: Record<string, number>, item: any) => {
             acc[item.name] = (acc[item.name] ?? 0) + 1
             return acc
-          }, {})).map(([name, count]) => <span className="pill" key={name}>{name} × {count}</span>)}</div>
+          }, {})).map(([name, count]) => <span className="pill" key={name}>{name} × {Number(count)}</span>)}</div>
         </section>
 
         <section className="panel">
