@@ -1,0 +1,59 @@
+import { useEffect, useMemo, useState } from 'react'
+import StatCard from '../components/StatCard'
+import { getOrders } from '../lib/data'
+import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import type { ClanOrder } from '../types'
+
+export default function HomePage() {
+  const [orders, setOrders] = useState<ClanOrder[]>([])
+  const [clan, setClan] = useState<any>(null)
+  const [watch, setWatch] = useState<any[]>([])
+
+  useEffect(() => {
+    getOrders().then(setOrders).catch(console.error)
+    if (isSupabaseConfigured && supabase) {
+      supabase.from('clan_state').select('*').eq('id', 1).maybeSingle().then(({ data }) => setClan(data))
+      supabase.from('bank_watch_status').select('*').order('display_name').then(({ data }) => setWatch(data ?? []))
+    }
+  }, [])
+
+  const working = useMemo(() => orders.filter((o) => ['claimed', 'in_progress'].includes(o.status)), [orders])
+  const ready = useMemo(() => orders.filter((o) => o.status === 'ready'), [orders])
+  const open = useMemo(() => orders.filter((o) => o.status === 'open'), [orders])
+  const clanData = clan?.clan_json
+  const xp = clanData?.xp
+
+  return (
+    <div className="page">
+      <header className="page-header"><div><span className="eyebrow">STRAWHATS [HAKI]</span><h1>Clan Home</h1></div></header>
+      <section className="stat-grid">
+        <StatCard label="Clan level" value={xp?.level ?? 35} hint={xp ? String(xp.progress_pct) + '% to level ' + String(xp.level + 1) : 'Connect clan API to sync live'} />
+        <StatCard label="Members" value={clanData?.clan?.member_count ?? 37} hint="Roster syncs from Koruxa" />
+        <StatCard label="Open orders" value={open.length} hint={String(working.length) + ' being worked'} />
+        <StatCard label="Ready" value={ready.length} hint="Ready for collection" />
+      </section>
+
+      <div className="two-column">
+        <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">LIVE WORK</span><h2>Currently working on</h2></div></div>
+          {working.length ? working.map((order) => (
+            <div className="list-row" key={order.id}>
+              <div><strong>{order.summary}</strong><span>for {order.requester?.koruxa_name ?? 'Clan member'}</span></div>
+              <span className="pill warning">{order.status.replace('_', ' ')}</span>
+            </div>
+          )) : <p className="empty">Nobody has a claimed order right now.</p>}
+        </section>
+
+        <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">WATCH LIST</span><h2>Clan bank stock</h2></div></div>
+          {watch.length ? watch.slice(0, 8).map((item) => (
+            <div className="list-row" key={item.item_key}>
+              <div><strong>{item.display_name}</strong><span>{Number(item.quantity ?? 0).toLocaleString()} in bank</span></div>
+              <span className={'pill ' + (item.status === 'healthy' ? 'success' : item.status === 'low' ? 'warning' : 'danger')}>{item.status}</span>
+            </div>
+          )) : <p className="empty">Officers can choose exactly which bank items appear here.</p>}
+        </section>
+      </div>
+    </div>
+  )
+}
