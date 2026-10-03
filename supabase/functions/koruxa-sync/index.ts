@@ -81,6 +81,15 @@ async function syncClan() {
     updated_at: now,
   })
   if (error) throw error
+
+  const { error: historyError } = await service.from('clan_bank_snapshots').insert({
+    captured_at: now,
+    item_count: Number(bank?.item_count ?? 0),
+    coins: Number(bank?.coins ?? 0),
+    items: bank?.items ?? [],
+  })
+  if (historyError) throw historyError
+
   return { members: clan?.clan?.member_count ?? null, item_count: bank?.item_count ?? null }
 }
 

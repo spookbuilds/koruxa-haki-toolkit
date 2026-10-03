@@ -13,7 +13,7 @@ export default function HomePage() {
     getOrders().then(setOrders).catch(console.error)
     if (isSupabaseConfigured && supabase) {
       supabase.from('clan_state').select('*').eq('id', 1).maybeSingle().then(({ data }) => setClan(data))
-      supabase.from('bank_watch_status').select('*').order('display_name').then(({ data }) => setWatch(data ?? []))
+      supabase.from('bank_watch_status').select('*').eq('show_on_home', true).order('display_name').then(({ data }) => setWatch(data ?? []))
     }
   }, [])
 
@@ -21,17 +21,26 @@ export default function HomePage() {
   const ready = useMemo(() => orders.filter((o) => o.status === 'ready'), [orders])
   const open = useMemo(() => orders.filter((o) => o.status === 'open'), [orders])
   const clanData = clan?.clan_json
+  const bankData = clan?.bank_json
   const xp = clanData?.xp
+  const currentWeek = clanData?.weekly?.[0]
 
   return (
     <div className="page">
-      <header className="page-header"><div><span className="eyebrow">STRAWHATS [HAKI]</span><h1>Clan Home</h1></div></header>
+      <header className="page-header"><div><span className="eyebrow">STRAWHATS [HAKI]</span><h1>Clan Home</h1><p className="muted">Live clan status, work queue and the stock you actually care about.</p></div></header>
       <section className="stat-grid">
         <StatCard label="Clan level" value={xp?.level ?? 35} hint={xp ? String(xp.progress_pct) + '% to level ' + String(xp.level + 1) : 'Connect clan API to sync live'} />
         <StatCard label="Members" value={clanData?.clan?.member_count ?? 37} hint="Roster syncs from Koruxa" />
         <StatCard label="Open orders" value={open.length} hint={String(working.length) + ' being worked'} />
         <StatCard label="Ready" value={ready.length} hint="Ready for collection" />
       </section>
+
+      {currentWeek ? <section className="stat-grid">
+        <StatCard label="Clan XP this week" value={Number(currentWeek.xp ?? 0).toLocaleString()} hint={String(currentWeek.active_members ?? 0) + ' active members'} />
+        <StatCard label="Quests this week" value={Number(currentWeek.quests ?? 0).toLocaleString()} />
+        <StatCard label="Firepit this week" value={Number(currentWeek.firepit_hours ?? 0).toLocaleString() + 'h'} />
+        <StatCard label="Bank value this week" value={Number(currentWeek.bank_value ?? 0).toLocaleString()} />
+      </section> : null}
 
       <div className="two-column">
         <section className="panel">
@@ -52,6 +61,17 @@ export default function HomePage() {
               <span className={'pill ' + (item.status === 'healthy' ? 'success' : item.status === 'low' ? 'warning' : 'danger')}>{item.status}</span>
             </div>
           )) : <p className="empty">Officers can choose exactly which bank items appear here.</p>}
+        </section>
+      </div>
+
+      <div className="two-column">
+        <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">READY</span><h2>Waiting for collection</h2></div></div>
+          {ready.length ? ready.slice(0, 8).map((order) => <div className="list-row" key={order.id}><div><strong>{order.summary}</strong><span>{order.requester?.koruxa_name ?? 'Clan member'}</span></div><span className="pill success">ready</span></div>) : <p className="empty">Nothing waiting for collection.</p>}
+        </section>
+        <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">AUGMENT VAULT</span><h2>Capacity</h2></div></div>
+          <div className="vault-meter"><strong>{Number(bankData?.augment_count ?? 0)} / {Number(bankData?.augment_vault_cap ?? 0)}</strong><span className={Number(bankData?.augment_count ?? 0) >= Number(bankData?.augment_vault_cap ?? 1) - 5 ? 'pill danger' : 'pill success'}>{Number(bankData?.augment_vault_cap ?? 0) ? Number(bankData.augment_vault_cap) - Number(bankData.augment_count ?? 0) + ' slots free' : 'Sync bank to view'}</span></div>
         </section>
       </div>
     </div>

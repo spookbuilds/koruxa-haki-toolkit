@@ -21,6 +21,7 @@ export default function BankPage() {
 
   const tabs = bank?.tabs ?? []
   const augments = bank?.augments ?? []
+  const activity = (bank?.log ?? []).slice(0, 25)
 
   return (
     <div className="page">
@@ -37,7 +38,7 @@ export default function BankPage() {
         <div className="panel-title"><div><span className="eyebrow">WATCH LIST</span><h2>Stock targets</h2></div></div>
         {watch.length ? watch.map((item) => (
           <div className="list-row" key={item.item_key}>
-            <div><strong>{item.display_name}</strong><span>Current {Number(item.quantity ?? 0).toLocaleString()} · Minimum {Number(item.minimum_qty).toLocaleString()}</span></div>
+            <div><strong>{item.display_name}</strong><span>Current {Number(item.quantity ?? 0).toLocaleString()} · Minimum {Number(item.minimum_qty).toLocaleString()}{item.preferred_qty ? ' · Preferred ' + Number(item.preferred_qty).toLocaleString() : ''}</span></div>
             <span className={'pill ' + (item.status === 'healthy' ? 'success' : item.status === 'low' ? 'warning' : 'danger')}>{item.status}</span>
           </div>
         )) : <p className="empty">No watched items yet. Owners and officers can add them in Admin.</p>}
@@ -63,13 +64,25 @@ export default function BankPage() {
         </div>
       </section>
 
-      <section className="panel">
-        <div className="panel-title"><div><span className="eyebrow">AUGMENT VAULT</span><h2>{augments.length} stored augments</h2></div></div>
-        <div className="chip-wrap">{Object.entries(augments.reduce((acc: Record<string, number>, item: any) => {
-          acc[item.name] = (acc[item.name] ?? 0) + 1
-          return acc
-        }, {})).map(([name, count]) => <span className="pill" key={name}>{name} × {count}</span>)}</div>
-      </section>
+      <div className="two-column">
+        <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">AUGMENT VAULT</span><h2>{augments.length} stored augments</h2></div></div>
+          <div className="chip-wrap">{Object.entries(augments.reduce((acc: Record<string, number>, item: any) => {
+            acc[item.name] = (acc[item.name] ?? 0) + 1
+            return acc
+          }, {})).map(([name, count]) => <span className="pill" key={name}>{name} × {count}</span>)}</div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">RECENT ACTIVITY</span><h2>Bank movement</h2></div></div>
+          {activity.length ? activity.map((entry: any, index: number) => {
+            const qty = Number(entry.quantity ?? entry.qty ?? 0)
+            const action = String(entry.action ?? entry.type ?? entry.event ?? '').toLowerCase()
+            const prefix = action.includes('withdraw') ? '−' : '+'
+            return <div className="list-row" key={String(entry.id ?? index)}><div><strong>{prefix}{Math.abs(qty).toLocaleString()} {entry.item_name ?? entry.name ?? entry.item_key ?? 'Item'}</strong><span>{entry.character ?? entry.character_name ?? entry.username ?? 'Clan member'} · {action || 'bank activity'}</span></div><span className="muted">{entry.created_at ? new Date(entry.created_at).toLocaleString() : entry.timestamp ? new Date(entry.timestamp).toLocaleString() : ''}</span></div>
+          }) : <p className="empty">Sync the clan bank to load recent activity.</p>}
+        </section>
+      </div>
     </div>
   )
 }
