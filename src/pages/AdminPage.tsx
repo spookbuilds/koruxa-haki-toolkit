@@ -1,13 +1,16 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
-import { getProfiles, invokeKoruxa } from '../lib/data'
+import { getOrderCategories, getProfiles, invokeKoruxa } from '../lib/data'
 import { sanitizeSkillExport } from '../lib/catalog'
 import { isOwner, isOfficer } from '../lib/permissions'
 import { isSupabaseConfigured, supabase } from '../lib/supabase'
-import type { AppRole, Profile } from '../types'
+import type { AppRole, OrderCategory, Profile } from '../types'
 
 export default function AdminPage({ currentProfile, onProfileChanged }: { currentProfile: Profile | null; onProfileChanged: () => void }) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [watch, setWatch] = useState<any[]>([])
+  const [categories, setCategories] = useState<OrderCategory[]>([])
+  const [permissions, setPermissions] = useState<Array<{ profile_id: string; category_id: string }>>([])
+  const [permissionMember, setPermissionMember] = useState('')
   const [itemKey, setItemKey] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [minimum, setMinimum] = useState(0)
@@ -15,10 +18,17 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   const [message, setMessage] = useState('')
 
   const refresh = async () => {
-    setProfiles(await getProfiles())
+    const [profileRows, categoryRows] = await Promise.all([getProfiles(), getOrderCategories()])
+    setProfiles(profileRows)
+    setCategories(categoryRows)
+    if (!permissionMember && profileRows[0]) setPermissionMember(profileRows[0].id)
     if (supabase) {
-      const { data } = await supabase.from('bank_watch_items').select('*').order('display_name')
-      setWatch(data ?? [])
+      const [{ data: watchRows }, { data: permRows }] = await Promise.all([
+        supabase.from('bank_watch_items').select('*').order('display_name'),
+        supabase.from('fulfilment_permissions').select('profile_id,category_id'),
+      ])
+      setWatch(watchRows ?? [])
+      setPermissions(permRows ?? [])
     }
   }
   useEffect(() => { refresh().catch(console.error) }, [])
@@ -53,6 +63,29 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     })
     setMessage(error ? error.message : 'Bank watch item saved.')
     if (!error) { setItemKey(''); setDisplayName(''); setMinimum(0); setPreferred(0); await refresh() }
+  }
+
+  const removeWatch = async (key: string) => {
+    if (!supabase) return
+    const { error } = await supabase.from('bank_watch_items').delete().eq('item_key', key)
+    setMessage(error ? error.message : 'Removed from bank watch.')
+    await refresh()
+  }
+
+  const togglePermission = async (categoryId: string, enabled: boolean) => {
+    if (!supabase || !permissionMember) return
+    const result = enabled
+      ? await supabase.from('fulfilment_permissions').upsert({ profile_id: permissionMember, category_id: categoryId, granted_by: currentProfile.id })
+      : await supabase.from('fulfilment_permissions').delete().eq('profile_id', permissionMember).eq('category_id', categoryId)
+    setMessage(result.error ? result.error.message : 'Fulfilment permission updated.')
+    await refresh()
+  }
+
+  const updateCategoryChannel = async (category: OrderCategory, channelId: string) => {
+    if (!supabase) return
+    const { error } = await supabase.from('order_categories').update({ discord_channel_id: channelId.trim() || null }).eq('id', category.id)
+    setMessage(error ? error.message : 'Discord channel saved for ' + category.label + '.')
+    await refresh()
   }
 
   const importCatalog = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -93,15 +126,17 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     }
   }
 
+  const selectedPermissions = new Set(permissions.filter((row) => row.profile_id === permissionMember).map((row) => row.category_id))
+
   return (
     <div className="page">
       <header className="page-header"><div><span className="eyebrow">ACCESS & CONFIGURATION</span><h1>Admin</h1></div></header>
       {message ? <div className="notice">{message}</div> : null}
 
-      {!isOwner(currentProfile.app_role) ? (
+      {!isOfficer(currentProfile.app_role) ? (
         <section className="panel">
-          <h2>Owner setup</h2>
-          <p className="muted">If this is the first account in a fresh install, claim the initial Owner role. After that, only an Owner can promote another Owner.</p>
+          <h2>Owner setup / restricted area</h2>
+          <p className="muted">On a brand-new install, the first intended owner can claim the initial Owner role. Once an Owner exists, this action will refuse everyone else.</p>
           <button className="primary-button" onClick={claimInitialOwner}>Claim initial Owner</button>
         </section>
       ) : null}
@@ -120,6 +155,20 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
         </section>
 
         <section className="panel">
+          <div className="panel-title"><div><h2>Order fulfilment permissions</h2><p className="muted">These are separate from app rank. Use them for cases such as only Spook fulfilling Fish orders.</p></div></div>
+          <label>Member<select value={permissionMember} onChange={(e) => setPermissionMember(e.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.koruxa_name ?? profile.display_name ?? profile.id}</option>)}</select></label>
+          <div className="permission-grid">{categories.map((category) => {
+            const checked = selectedPermissions.has(category.id)
+            return <label className="check-card" key={category.id}><input type="checkbox" checked={checked} onChange={(e) => togglePermission(category.id, e.target.checked)} /><span><strong>{category.label}</strong><small>{category.description}</small></span></label>
+          })}</div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-title"><div><h2>Order Discord channels</h2><p className="muted">Every order tab can post to its own Discord channel. Enter the numeric channel ID.</p></div></div>
+          {categories.map((category) => <CategoryChannel key={category.id} category={category} onSave={updateCategoryChannel} />)}
+        </section>
+
+        <section className="panel">
           <div className="panel-title"><div><h2>Bank watch list</h2><p className="muted">Only explicitly tracked items can trigger low-stock cards.</p></div></div>
           <form className="form-grid" onSubmit={addWatch}>
             <label>Item key<input value={itemKey} onChange={(e) => setItemKey(e.target.value)} placeholder="noctite_ore" required /></label>
@@ -128,7 +177,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
             <label>Preferred<input type="number" min={0} value={preferred} onChange={(e) => setPreferred(Number(e.target.value))} /></label>
             <button className="primary-button">Save tracked item</button>
           </form>
-          {watch.map((item) => <div className="list-row" key={item.item_key}><div><strong>{item.display_name}</strong><span>{item.item_key}</span></div><span>min {Number(item.minimum_qty).toLocaleString()}</span></div>)}
+          {watch.map((item) => <div className="list-row" key={item.item_key}><div><strong>{item.display_name}</strong><span>{item.item_key} · min {Number(item.minimum_qty).toLocaleString()}</span></div><button className="ghost-button" onClick={() => removeWatch(item.item_key)}>Remove</button></div>)}
         </section>
       </> : null}
 
@@ -138,4 +187,10 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       </section> : null}
     </div>
   )
+}
+
+function CategoryChannel({ category, onSave }: { category: OrderCategory; onSave: (category: OrderCategory, channelId: string) => void }) {
+  const [value, setValue] = useState(category.discord_channel_id ?? '')
+  useEffect(() => setValue(category.discord_channel_id ?? ''), [category.discord_channel_id])
+  return <div className="list-row"><div><strong>{category.label}</strong><span>{category.description}</span></div><div className="compact-editor"><input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Discord channel ID" /><button className="secondary-button" onClick={() => onSave(category, value)}>Save</button></div></div>
 }
