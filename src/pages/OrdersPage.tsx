@@ -1,6 +1,8 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import FishOrderForm from '../components/FishOrderForm'
 import OreGemOrderForm from '../components/OreGemOrderForm'
+import CatalogueOrderForm from '../components/CatalogueOrderForm'
+import PotionOrderForm from '../components/PotionOrderForm'
 import { getOrderCategories, getOrders } from '../lib/data'
 import { apiPost } from '../lib/api'
 import type { ClanOrder, OrderCategory, Profile } from '../types'
@@ -25,7 +27,6 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
   const [categories, setCategories] = useState<OrderCategory[]>([])
   const [activeCategory, setActiveCategory] = useState('')
   const [queueView, setQueueView] = useState<QueueView>('mine')
-  const [summary, setSummary] = useState('')
   const [message, setMessage] = useState('')
 
   const refresh = async () => {
@@ -66,13 +67,6 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
     } catch (error: any) {
       setMessage(error.message ?? 'Could not create order.')
     }
-  }
-
-  const createGenericOrder = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!summary.trim()) return
-    await insertOrder(summary.trim(), { form: 'generic', notes: '' })
-    setSummary('')
   }
 
   const transition = async (order: ClanOrder, action: 'claim' | 'ready' | 'collected' | 'cancel') => {
@@ -121,8 +115,17 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
               className={activeCategory === category.id ? 'order-category-tab active' : 'order-category-tab'}
               onClick={() => setActiveCategory(category.id)}
             >
-              <span className="order-tab-gem" />
-              <span><strong>{category.label}</strong><small>{category.id === 'ore-gems' ? 'Market board' : category.id === 'fish' ? 'Fish market' : 'Clan request'}</small></span>
+              <span className="order-tab-icon">{({
+                'ore-gems': '⛏️',
+                fish: '🐟',
+                smithing: '🔨',
+                crafting: '🧵',
+                jewelery: '💍',
+                herblore: '🧪',
+                fletching: '🏹',
+                farming: '🌱',
+              } as Record<string,string>)[category.id] ?? '✦'}</span>
+              <span><strong>{category.label}</strong><small>{category.id === 'ore-gems' ? 'Ore & gem market' : category.id === 'fish' ? 'Fresh catch market' : category.id === 'herblore' ? 'Potions & Overloads' : 'Full Koruxa catalogue'}</small></span>
             </button>
           ))}
         </div>
@@ -130,21 +133,13 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
         <div className={'exchange-board exchange-board-' + (activeCategory || 'generic')}>
           {activeCategory === 'fish' ? <FishOrderForm onSubmit={insertOrder} /> :
             activeCategory === 'ore-gems' ? <OreGemOrderForm onSubmit={insertOrder} /> :
-            <div className="generic-order-board">
-              <div className="order-board-main">
-                <div className="board-heading"><span>HAKI CUSTOM ORDER</span><h2>{activeCategoryInfo?.label ?? 'Clan'} Request</h2></div>
-                <form className="stack" onSubmit={createGenericOrder}>
-                  <label>What do you need?
-                    <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={4} maxLength={500} placeholder="Describe the item, quantity, quality or any special requirements…" required />
-                  </label>
-                  <button className="exchange-submit" disabled={!summary.trim()}>Submit {activeCategoryInfo?.label ?? ''} order</button>
-                </form>
-              </div>
-              <aside className="order-board-sidebar">
-                <div className="flash-card gold"><span className="flash-icon">✦</span><div><strong>Quick info</strong><p>Be specific about quantity, quality and any special requirements.</p></div></div>
-                <div className="flash-card blue"><span className="flash-icon">✓</span><div><strong>Tracked end-to-end</strong><p>Your request stays visible in My Requests until it is collected or cancelled.</p></div></div>
-              </aside>
-            </div>}
+            activeCategory === 'herblore' ? <PotionOrderForm onSubmit={insertOrder} /> :
+            activeCategory === 'smithing' ? <CatalogueOrderForm skillKey="smithing" title="Smithing" onSubmit={insertOrder} /> :
+            activeCategory === 'crafting' ? <CatalogueOrderForm skillKey="crafting" title="Crafting" onSubmit={insertOrder} /> :
+            activeCategory === 'fletching' ? <CatalogueOrderForm skillKey="fletching" title="Fletching" onSubmit={insertOrder} /> :
+            activeCategory === 'jewelery' ? <CatalogueOrderForm skillKey="jewelery" title="Jewellery" onSubmit={insertOrder} /> :
+            activeCategory === 'farming' ? <CatalogueOrderForm skillKey="farming" title="Farming" onSubmit={insertOrder} /> :
+            <div className="order-board-main"><div className="notice">This order board is not configured.</div></div>}
         </div>
         {message ? <p className="notice">{message}</p> : null}
       </section>
@@ -200,7 +195,12 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
                 {lines.length ? <div className="order-ticket-lines">
                   {lines.map((line: any, index: number) => (
                     <div className="order-ticket-line" key={index}>
-                      <div><strong>{line.description ?? line.item ?? 'Order item'}</strong>{line.required_for_gems ? <small>{Number(line.required_for_gems).toLocaleString()} matching ore included automatically</small> : null}</div>
+                      <div>
+                        <strong>{line.description ?? line.item ?? 'Order item'}</strong>
+                        {line.required_for_gems ? <small>{Number(line.required_for_gems).toLocaleString()} matching ore included automatically</small> : null}
+                        {Array.isArray(line.materials) && line.materials.length ? <small>Materials: {line.materials.map((material: any) => Number(material.quantity).toLocaleString() + ' ' + (material.item ?? material.item_key)).join(' · ')}</small> : null}
+                        {Array.isArray(line.give) && line.give.length ? <small>Give: {line.give.map((entry: any) => Number(entry.amount).toLocaleString() + ' ' + entry.name).join(' · ')}</small> : null}
+                      </div>
                       {line.line_total != null ? <strong>{Number(line.line_total).toLocaleString()} GP</strong> : null}
                     </div>
                   ))}
