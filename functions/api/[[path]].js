@@ -39,6 +39,173 @@ function bool(value) {
   return value === true || value === 1 || value === '1'
 }
 
+const WIKI_ORDER_SKILLS = new Set(['smithing','crafting','fletching','jewelery','herblore','farming'])
+
+function decodeHtml(value) {
+  return String(value || '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&times;/gi, '×')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+}
+
+function htmlCellText(html) {
+  return decodeHtml(
+    String(html || '')
+      .replace(/<br\s*\/?\s*>/gi, '\n')
+      .replace(/<\/(p|div|li)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+  )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
+function slugify(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function wikiNumber(value) {
+  const cleaned = String(value || '').replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)
+  return cleaned ? Number(cleaned[0]) : 0
+}
+
+function durationMs(value) {
+  const text = String(value || '').toLowerCase()
+  let seconds = 0
+  const hours = text.match(/(\d+(?:\.\d+)?)\s*h/)
+  const minutes = text.match(/(\d+(?:\.\d+)?)\s*m/)
+  const secs = text.match(/(\d+(?:\.\d+)?)\s*s/)
+  if (hours) seconds += Number(hours[1]) * 3600
+  if (minutes) seconds += Number(minutes[1]) * 60
+  if (secs) seconds += Number(secs[1])
+  if (!seconds && /^\d+(?:\.\d+)?$/.test(text.trim())) seconds = Number(text.trim())
+  return Math.round(seconds * 1000)
+}
+
+function parseWikiQuantityLabel(value) {
+  const text = String(value || '').trim()
+  const match = text.match(/^([\d,]+)\s*[×x]\s*(.+)$/)
+  if (!match) return { quantity: 1, label: text }
+  return { quantity: Number(match[1].replace(/,/g, '')) || 1, label: match[2].trim() }
+}
+
+function parseWikiIngredients(value) {
+  const text = String(value || '').trim()
+  if (!text) return []
+  return text
+    .split(/\n|\s*[•·;]\s*|,(?=\s*\d+[\d,]*\s*[×x])/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^([\d,]+)\s*[×x]\s*(.+)$/)
+      if (!match) return null
+      const label = match[2].trim()
+      return {
+        item_key: slugify(label),
+        quantity: Number(match[1].replace(/,/g, '')) || 1,
+        label,
+      }
+    })
+    .filter(Boolean)
+}
+
+function parseWikiSkillPage(html, skillKey) {
+  const rows = []
+  const rowMatches = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+  for (const rowHtml of rowMatches) {
+    const cellHtml = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => match[1])
+    if (cellHtml.length < 7) continue
+    const cells = cellHtml.map(htmlCellText)
+    const level = Number.parseInt(cells[0], 10)
+    if (!Number.isFinite(level)) continue
+
+    const actionLabel = cells[1]
+    const makesText = cells[5]
+    if (!actionLabel || !makesText || makesText === '—') continue
+
+    const made = parseWikiQuantityLabel(makesText.split('\n')[0])
+    if (!made.label) continue
+    const ingredients = parseWikiIngredients(cells[6])
+    const actionKey = 'wiki_' + skillKey + '_' + slugify(actionLabel)
+    rows.push({
+      action_key: actionKey,
+      skill_key: skillKey,
+      label: actionLabel,
+      min_level: level,
+      duration_ms: durationMs(cells[3]),
+      xp: wikiNumber(cells[2]),
+      amount: made.quantity,
+      reward_item_key: slugify(made.label),
+      reward_label: made.label,
+      image: null,
+      is_recipe: ingredients.length > 0,
+      category: null,
+      ingredients: ingredients.map((ingredient) => ({
+        item_key: ingredient.item_key,
+        quantity: ingredient.quantity,
+        label: ingredient.label,
+      })),
+      reward_stats: null,
+      unlock_reqs: null,
+    })
+  }
+
+  const unique = new Map()
+  for (const row of rows) unique.set(row.action_key, row)
+  const outputToAction = new Map([...unique.values()].map((row) => [row.reward_item_key, row.action_key]))
+  return [...unique.values()].map((row) => ({
+    ...row,
+    ingredients: row.ingredients.map((ingredient) => ({
+      item_key: ingredient.item_key,
+      quantity: ingredient.quantity,
+      src_skill: outputToAction.has(ingredient.item_key) ? skillKey : undefined,
+      src_action: outputToAction.get(ingredient.item_key),
+    })),
+  }))
+}
+
+async function syncWikiSkill(env, skillKey) {
+  if (!WIKI_ORDER_SKILLS.has(skillKey)) throw new HttpError(400, 'That Koruxa skill is not an order catalogue skill')
+  const response = await fetch('https://koruxa.com/wiki/skills/' + skillKey + '.html', {
+    headers: { Accept: 'text/html', 'User-Agent': 'HAKI-Toolkit/1.0' },
+  })
+  if (!response.ok) throw new HttpError(502, 'Koruxa wiki returned ' + response.status + ' for ' + skillKey)
+  const html = await response.text()
+  const actions = parseWikiSkillPage(html, skillKey)
+  if (!actions.length) throw new HttpError(502, 'Could not read the Koruxa ' + skillKey + ' action table')
+
+  const now = nowIso()
+  for (let i = 0; i < actions.length; i += 75) {
+    const chunk = actions.slice(i, i + 75)
+    await env.DB.batch(chunk.map((action) => env.DB.prepare(
+      `INSERT INTO skill_actions
+       (action_key,skill_key,label,min_level,duration_ms,xp,amount,reward_item_key,reward_label,image,is_recipe,category,ingredients_json,reward_stats_json,unlock_reqs_json,updated_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(action_key) DO UPDATE SET
+         skill_key=excluded.skill_key,label=excluded.label,min_level=excluded.min_level,duration_ms=excluded.duration_ms,
+         xp=excluded.xp,amount=excluded.amount,reward_item_key=excluded.reward_item_key,reward_label=excluded.reward_label,
+         image=excluded.image,is_recipe=excluded.is_recipe,category=excluded.category,ingredients_json=excluded.ingredients_json,
+         reward_stats_json=excluded.reward_stats_json,unlock_reqs_json=excluded.unlock_reqs_json,updated_at=excluded.updated_at`
+    ).bind(
+      action.action_key, action.skill_key, action.label, action.min_level, action.duration_ms, action.xp, action.amount,
+      action.reward_item_key, action.reward_label, action.image, action.is_recipe ? 1 : 0, action.category,
+      JSON.stringify(action.ingredients), null, null, now,
+    )))
+  }
+  return actions
+}
+
 async function getClanState(env) {
   const row = await env.DB.prepare('SELECT * FROM clan_state WHERE id=1').first()
   if (!row) return null
@@ -483,6 +650,14 @@ async function handle(context) {
     return json({ xp_table: parseJson(row?.value_json, []) })
   }
 
+  if (method === 'POST' && joined === 'catalog/wiki-sync') {
+    await requireClanUser(context)
+    const body = await bodyJson(request)
+    const skillKey = String(body.skill_key || '').trim().toLowerCase()
+    const actions = await syncWikiSkill(env, skillKey)
+    return json({ success: true, skill_key: skillKey, imported: actions.length, source: 'Koruxa Wiki' })
+  }
+
   if (method === 'POST' && joined === 'catalog/import') {
     const user = await requireUser(context, OWNER_ROLES)
     const body = await bodyJson(request)
@@ -572,7 +747,7 @@ async function handle(context) {
     const user = await requireClanUser(context)
     const body = await bodyJson(request)
     const categoryId = String(body.category_id || '')
-    const category = await env.DB.prepare('SELECT * FROM order_categories WHERE id=? AND enabled=1').bind(categoryId).first()
+    const category = await env.DB.prepare("SELECT * FROM order_categories WHERE id=? AND enabled=1 AND id<>'other'").bind(categoryId).first()
     if (!category) throw new HttpError(400, 'Invalid order category')
     const summary = String(body.summary || '').trim()
     if (!summary) throw new HttpError(400, 'Order summary is required')
@@ -650,7 +825,7 @@ async function handle(context) {
 
   if (method === 'GET' && joined === 'order-categories') {
     await requireClanUser(context)
-    const { results } = await env.DB.prepare('SELECT * FROM order_categories WHERE enabled=1 ORDER BY sort_order,label').all()
+    const { results } = await env.DB.prepare("SELECT * FROM order_categories WHERE enabled=1 AND id<>'other' ORDER BY sort_order,label").all()
     return json({ categories: results.map((row) => ({
       id: row.id, label: row.label, description: row.description, discord_channel_id: row.discord_channel_id,
       enabled: Boolean(row.enabled), sort_order: Number(row.sort_order || 100),
