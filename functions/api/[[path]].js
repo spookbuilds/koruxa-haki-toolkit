@@ -17,6 +17,7 @@ import {
   requireClanUser,
   requireUser,
   sendOrderDiscord,
+  sendDiscordMessage,
   sessionCookie,
   sessionUser,
   snapshotFromRow,
@@ -583,8 +584,15 @@ async function handle(context) {
       env.DB.prepare("INSERT INTO order_events (order_id,event_type,actor_user_id,details_json,created_at) VALUES (?,'created',?,'{}',?)")
         .bind(id, user.id, now),
     ])
-    try { await sendOrderDiscord(env, id, 'created') } catch (error) { console.log('Discord created notification failed', error) }
-    return json({ success: true, id })
+    let discord = null
+    let discord_warning = null
+    try {
+      discord = await sendOrderDiscord(env, id, 'created')
+      if (discord?.skipped) discord_warning = discord.reason
+    } catch (error) {
+      discord_warning = error instanceof Error ? error.message : 'Discord notification failed'
+    }
+    return json({ success: true, id, discord, discord_warning })
   }
 
   if (parts[0] === 'orders' && parts[1] && parts[2] && method === 'POST') {
@@ -626,6 +634,18 @@ async function handle(context) {
       try { await sendOrderDiscord(env, parts[1], 'collected') } catch (error) { console.log('Discord collected notification failed', error) }
       return json({ success: true })
     }
+
+    if (parts[2] === 'cancel') {
+      if (!['open','claimed','in_progress'].includes(order.status)) throw new HttpError(409, 'Only active orders can be cancelled')
+      const requester = order.requester_user_id === user.id
+      if (!requester && !OFFICER_ROLES.includes(user.app_role)) throw new HttpError(403, 'Only the requester or an Officer can cancel this order')
+      await env.DB.batch([
+        env.DB.prepare("UPDATE orders SET status='cancelled',cancelled_at=? WHERE id=?").bind(now, parts[1]),
+        env.DB.prepare("INSERT INTO order_events (order_id,event_type,actor_user_id,details_json,created_at) VALUES (?,'cancelled',?,'{}',?)").bind(parts[1], user.id, now),
+      ])
+      try { await sendOrderDiscord(env, parts[1], 'cancelled') } catch (error) { console.log('Discord cancellation notification failed', error) }
+      return json({ success: true })
+    }
   }
 
   if (method === 'GET' && joined === 'order-categories') {
@@ -640,9 +660,26 @@ async function handle(context) {
   if (parts[0] === 'order-categories' && parts[1] && method === 'PATCH') {
     await requireUser(context, OFFICER_ROLES)
     const body = await bodyJson(request)
+    const raw = body.discord_channel_id ? String(body.discord_channel_id).trim() : ''
+    const mentionMatch = raw.match(/^<#(\d+)>$/)
+    const channelId = mentionMatch ? mentionMatch[1] : raw
+    if (channelId && !/^\d{15,25}$/.test(channelId)) throw new HttpError(400, 'Paste the numeric Discord channel ID, not the channel name')
     await env.DB.prepare('UPDATE order_categories SET discord_channel_id=? WHERE id=?')
-      .bind(body.discord_channel_id ? String(body.discord_channel_id) : null, parts[1]).run()
-    return json({ success: true })
+      .bind(channelId || null, parts[1]).run()
+    return json({ success: true, discord_channel_id: channelId || null })
+  }
+
+  if (parts[0] === 'order-categories' && parts[1] && parts[2] === 'test-discord' && method === 'POST') {
+    await requireUser(context, OFFICER_ROLES)
+    const category = await env.DB.prepare('SELECT * FROM order_categories WHERE id=?').bind(parts[1]).first()
+    if (!category) throw new HttpError(404, 'Order category not found')
+    if (!category.discord_channel_id) throw new HttpError(400, 'Save a Discord channel ID first')
+    const result = await sendDiscordMessage(
+      env,
+      String(category.discord_channel_id),
+      '✅ **HAKI Toolkit connection test**\n' + category.label + ' orders are connected to this channel.',
+    )
+    return json({ success: true, message_id: result?.id ?? null })
   }
 
   if (method === 'GET' && joined === 'bank/watch') {
