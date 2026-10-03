@@ -48,15 +48,27 @@ export default function HomePage() {
 
       <div className="two-column">
         <section className="panel">
+          <div className="panel-title"><div><span className="eyebrow">OPEN ORDERS</span><h2>Waiting to be claimed</h2></div></div>
+          {open.length ? open.slice(0, 8).map((order) => (
+            <div className="list-row" key={order.id}>
+              <div><strong>{order.summary}</strong><span>requested by {order.requester?.koruxa_name ?? order.requester?.display_name ?? 'Clan member'}</span></div>
+              <span className="pill">open</span>
+            </div>
+          )) : <p className="empty">No open orders waiting for a fulfiller.</p>}
+        </section>
+
+        <section className="panel">
           <div className="panel-title"><div><span className="eyebrow">LIVE WORK</span><h2>Currently working on</h2></div></div>
           {working.length ? working.map((order) => (
             <div className="list-row" key={order.id}>
               <div><strong>{order.summary}</strong><span>for {order.requester?.koruxa_name ?? order.requester?.display_name ?? 'Clan member'}</span></div>
               <span className="pill warning">{order.status.replace('_', ' ')}</span>
             </div>
-          )) : <p className="empty">Nobody has a claimed order right now.</p>}
+          )) : <p className="empty">Nobody has claimed an order yet.</p>}
         </section>
+      </div>
 
+      <div className="two-column">
         <section className="panel">
           <div className="panel-title"><div><span className="eyebrow">WATCH LIST</span><h2>Clan bank stock</h2></div></div>
           {watch.length ? watch.slice(0, 8).map((item) => (
