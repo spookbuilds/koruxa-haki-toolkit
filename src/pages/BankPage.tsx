@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
+import { apiGet } from '../lib/api'
 
 export default function BankPage() {
   const [bank, setBank] = useState<any>(null)
@@ -8,9 +8,13 @@ export default function BankPage() {
   const [tab, setTab] = useState<number | 'all'>('all')
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return
-    supabase.from('clan_state').select('bank_json').eq('id', 1).maybeSingle().then(({ data }) => setBank(data?.bank_json ?? null))
-    supabase.from('bank_watch_status').select('*').order('display_name').then(({ data }) => setWatch(data ?? []))
+    Promise.all([
+      apiGet<{ state: any }>('/api/clan/state'),
+      apiGet<{ watch: any[] }>('/api/bank/watch'),
+    ]).then(([stateResult, watchResult]) => {
+      setBank(stateResult.state?.bank_json ?? null)
+      setWatch(watchResult.watch ?? [])
+    }).catch(console.error)
   }, [])
 
   const items = useMemo(() => (bank?.items ?? []).filter((item: any) => {
@@ -79,7 +83,8 @@ export default function BankPage() {
             const qty = Number(entry.quantity ?? entry.qty ?? 0)
             const action = String(entry.action ?? entry.type ?? entry.event ?? '').toLowerCase()
             const prefix = action.includes('withdraw') ? '−' : '+'
-            return <div className="list-row" key={String(entry.id ?? index)}><div><strong>{prefix}{Math.abs(qty).toLocaleString()} {entry.item_name ?? entry.name ?? entry.item_key ?? 'Item'}</strong><span>{entry.character ?? entry.character_name ?? entry.username ?? 'Clan member'} · {action || 'bank activity'}</span></div><span className="muted">{entry.created_at ? new Date(entry.created_at).toLocaleString() : entry.at ? new Date(entry.at).toLocaleString() : entry.timestamp ? new Date(entry.timestamp).toLocaleString() : ''}</span></div>
+            const dateValue = entry.created_at ?? entry.at ?? entry.timestamp
+            return <div className="list-row" key={String(entry.id ?? index)}><div><strong>{prefix}{Math.abs(qty).toLocaleString()} {entry.item_name ?? entry.name ?? entry.item_key ?? 'Item'}</strong><span>{entry.character ?? entry.character_name ?? entry.username ?? 'Clan member'} · {action || 'bank activity'}</span></div><span className="muted">{dateValue ? new Date(dateValue).toLocaleString() : ''}</span></div>
           }) : <p className="empty">Sync the clan bank to load recent activity.</p>}
         </section>
       </div>
