@@ -30,10 +30,16 @@ async function writePlayerSnapshot(profileId: string, me: any) {
     total_xp: Number(me.total_xp ?? 0),
     total_level: Number(me.total_level ?? 0),
     combat_level: Number(me.combat_level ?? 0),
+    quest_points: Number(me.quest_points ?? 0),
+    coins: Number(me.coins ?? 0),
+    is_online: Boolean(me.is_online),
+    is_premium: Boolean(me.is_premium),
     skills: me.skills ?? [],
     equipment: me.equipment ?? [],
     farms: me.farms ?? [],
     research_summary: me.research ?? {},
+    boss: me.boss ?? {},
+    event_stats: me.event_stats ?? {},
   }
   const { error: snapshotError } = await service.from('member_snapshots').insert(snapshot)
   if (snapshotError) throw snapshotError

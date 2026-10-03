@@ -46,7 +46,13 @@ export function sanitizeSkillExport(input: unknown): { actions: SkillAction[]; x
         }))
       : null,
     reward_stats: raw.reward_stats ?? null,
-    unlock_reqs: raw.unlock_reqs ?? null,
+    unlock_reqs: Array.isArray(raw.unlock_reqs)
+      ? raw.unlock_reqs.map((req: any) => ({
+          type: String(req.type ?? ''),
+          label: String(req.label ?? ''),
+          target: Number(req.target ?? 0),
+        })).filter((req: any) => req.type)
+      : null,
   })).filter((action) => action.action_key && action.skill_key && action.reward_item_key)
 
   return {
