@@ -303,7 +303,18 @@ export async function sendOrderDiscord(env, orderId, event) {
   if (event === 'collected') content = '**Order collected**\n' + order.requester_name + ': ' + order.summary
   if (!content) return { skipped: true, reason: 'Unsupported Discord event' }
 
-  const response = await fetch('https://discord.com/api/v10/channels/' + order.discord_channel_id + '/messages', {
+  const result = await sendDiscordMessage(env, String(order.discord_channel_id), content, allowedUsers)
+  return { success: true, channel_id: String(order.discord_channel_id), message_id: result.id ?? null }
+}
+
+export async function sendDiscordMessage(env, channelId, content, allowedUsers = []) {
+  if (!env.DISCORD_BOT_TOKEN) throw new HttpError(500, 'DISCORD_BOT_TOKEN is not configured')
+  const cleanChannelId = String(channelId || '').trim().replace(/^<#(\d+)>$/, '$1')
+  if (!/^\d{15,25}$/.test(cleanChannelId)) {
+    throw new HttpError(400, 'Discord channel ID must be the numeric channel ID copied from Discord')
+  }
+
+  const response = await fetch('https://discord.com/api/v10/channels/' + cleanChannelId + '/messages', {
     method: 'POST',
     headers: {
       Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN,
@@ -314,6 +325,21 @@ export async function sendOrderDiscord(env, orderId, event) {
       allowed_mentions: allowedUsers.length ? { users: allowedUsers } : { parse: [] },
     }),
   })
-  if (!response.ok) throw new HttpError(502, 'Discord notification failed: ' + await response.text())
-  return { success: true }
+
+  const responseText = await response.text()
+  let responseBody = null
+  try { responseBody = responseText ? JSON.parse(responseText) : null } catch { responseBody = responseText || null }
+
+  if (!response.ok) {
+    const discordMessage = typeof responseBody === 'object' && responseBody
+      ? String(responseBody.message || responseBody.error || '')
+      : String(responseBody || '')
+    throw new HttpError(
+      502,
+      'Discord rejected the message (' + response.status + ')' + (discordMessage ? ': ' + discordMessage : ''),
+      { discord_status: response.status, discord_response: responseBody, channel_id: cleanChannelId },
+    )
+  }
+
+  return responseBody || { success: true }
 }
