@@ -95,6 +95,15 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     }
   }
 
+  const testCategoryChannel = async (category: OrderCategory) => {
+    try {
+      const result: any = await apiPost('/api/order-categories/' + category.id + '/test-discord')
+      setMessage('Discord test sent for ' + category.label + (result?.message_id ? ' ✓' : '.'))
+    } catch (error: any) {
+      setMessage(error.message ?? 'Discord test failed.')
+    }
+  }
+
   const importCatalog = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
     if (!files.length) return
@@ -174,7 +183,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
 
       <section className="panel">
         <div className="panel-title"><div><h2>Order Discord channels</h2><p className="muted">Each order tab can post to its own Discord channel. Enter the numeric channel ID.</p></div></div>
-        {categories.map((category) => <CategoryChannel key={category.id} category={category} onSave={updateCategoryChannel} />)}
+        {categories.map((category) => <CategoryChannel key={category.id} category={category} onSave={updateCategoryChannel} onTest={testCategoryChannel} />)}
       </section>
 
       <section className="panel">
@@ -197,8 +206,8 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   )
 }
 
-function CategoryChannel({ category, onSave }: { category: OrderCategory; onSave: (category: OrderCategory, channelId: string) => void }) {
+function CategoryChannel({ category, onSave, onTest }: { category: OrderCategory; onSave: (category: OrderCategory, channelId: string) => void; onTest: (category: OrderCategory) => void }) {
   const [value, setValue] = useState(category.discord_channel_id ?? '')
   useEffect(() => setValue(category.discord_channel_id ?? ''), [category.discord_channel_id])
-  return <div className="list-row"><div><strong>{category.label}</strong><span>{category.description}</span></div><div className="compact-editor"><input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Discord channel ID" /><button className="secondary-button" onClick={() => onSave(category, value)}>Save</button></div></div>
+  return <div className="list-row"><div><strong>{category.label}</strong><span>{category.description}</span></div><div className="compact-editor"><input value={value} onChange={(e) => setValue(e.target.value)} placeholder="Numeric Discord Channel ID" /><button className="secondary-button" onClick={() => onSave(category, value)}>Save</button><button className="ghost-button" disabled={!category.discord_channel_id} onClick={() => onTest(category)}>Test</button></div></div>
 }
