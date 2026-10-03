@@ -12,7 +12,7 @@ npx supabase db push
 Deploy the functions:
 
 ```bash
-npx supabase functions deploy koruxa-sync
+npx supabase functions deploy koruxa-sync --no-verify-jwt
 npx supabase functions deploy order-discord
 ```
 
@@ -56,7 +56,7 @@ Each member opens Members and pastes their personal read-only Koruxa token. The 
 
 Set `KORUXA_CLAN_TOKEN` in Supabase secrets. Owners/officers can use **Sync clan + bank** from Admin.
 
-For automatic history, schedule an HTTP POST to the `koruxa-sync` Edge Function with:
+The `koruxa-sync` function is deployed with `--no-verify-jwt` because it supports both signed-in app users and a cron secret; the function performs its own authentication checks.\n\nFor automatic history, schedule an HTTP POST to the `koruxa-sync` Edge Function with:
 
 - header: `x-cron-secret: <CRON_SECRET>`
 - JSON body: `{"action":"scheduled-sync"}`

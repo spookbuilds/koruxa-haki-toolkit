@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from 'react'
-import { maxGemsWithinOreCap, ORE_GEM_ITEM_CAP, oreGemMaterials, requiredOreForGems } from '../data/orderForms'
+import { ORE_GEM_ITEM_CAP, oreGemMaterials, requiredOreForGems } from '../data/orderForms'
 
 type Basket = Record<string, { extraOre: number; gems: number }>
 
@@ -12,8 +12,6 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
   const [error, setError] = useState('')
 
   const material = oreGemMaterials.find((entry) => entry.name === materialName) ?? oreGemMaterials[0]
-  const maxGems = maxGemsWithinOreCap()
-
   const rows = useMemo(() => oreGemMaterials.flatMap((entry) => {
     const state = basket[entry.name]
     if (!state) return []
@@ -35,7 +33,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
     const nextGems = type === 'gem' ? current.gems + qty : current.gems
     const required = requiredOreForGems(nextGems)
     if (nextGems > ORE_GEM_ITEM_CAP) return setError('No individual gem quantity can exceed ' + ORE_GEM_ITEM_CAP.toLocaleString() + '.')
-    if (nextExtra + required > ORE_GEM_ITEM_CAP) return setError('That would push matching ore above the ' + ORE_GEM_ITEM_CAP.toLocaleString() + ' item cap. With no extra ore, the practical gem maximum is ' + maxGems.toLocaleString() + '.')
+    if (nextExtra > ORE_GEM_ITEM_CAP) return setError('Extra ore cannot exceed ' + ORE_GEM_ITEM_CAP.toLocaleString() + ' for one material.')
     setBasket((old) => ({ ...old, [material.name]: { extraOre: nextExtra, gems: nextGems } }))
   }
 

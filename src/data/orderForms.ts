@@ -41,8 +41,8 @@ export const oreGemMaterials = [
   { name: 'Korunite', orePrice: 1350, gemName: 'Astralite', gemPrice: 44000 },
   { name: 'Drakonite', orePrice: 1450, gemName: 'Emberstone', gemPrice: 46000 },
   { name: 'Potent Void Rift', orePrice: 350, gemName: null, gemPrice: null },
-  { name: 'Pyrethium', orePrice: 1550, gemName: 'Magmaheart', gemPrice: 48000 },
-  { name: 'Infernite', orePrice: 1650, gemName: 'Pyreshard', gemPrice: 50000 },
+  { name: 'Pyrethium', orePrice: 5000, gemName: 'Magmaheart', gemPrice: 100000 },
+  { name: 'Infernite', orePrice: 40000, gemName: 'Pyreshard', gemPrice: 100000 },
 ] as const
 
 export const ORE_GEM_ITEM_CAP = 500000
@@ -52,13 +52,3 @@ export function requiredOreForGems(gemQuantity: number) {
   return Math.min(qty, 4000) * 50 + Math.max(0, qty - 4000) * 100
 }
 
-export function maxGemsWithinOreCap() {
-  let low = 0
-  let high = ORE_GEM_ITEM_CAP
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2)
-    if (requiredOreForGems(mid) <= ORE_GEM_ITEM_CAP) low = mid
-    else high = mid - 1
-  }
-  return low
-}

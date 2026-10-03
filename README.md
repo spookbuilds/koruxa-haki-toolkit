@@ -17,6 +17,8 @@ A full clan companion app for **StrawHats [HAKI]** in Koruxa.
 - What-If modifier calculator
 - Who Can Make This? capability finder
 - separate order tabs/categories
+- migrated Fish order form with all 18 raw/cooked fish and live price calculation
+- migrated Ore & Gems market with automatic tiered matching-ore requirements
 - per-member order fulfilment permissions
 - order claim -> ready -> collected workflow
 - configurable Discord channel per order category
