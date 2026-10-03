@@ -1,11 +1,11 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import FishOrderForm from '../components/FishOrderForm'
 import OreGemOrderForm from '../components/OreGemOrderForm'
-import { getOrderCategories, getOrders, notifyDiscord } from '../lib/data'
-import { supabase } from '../lib/supabase'
+import { getOrderCategories, getOrders } from '../lib/data'
+import { apiPost } from '../lib/api'
 import type { ClanOrder, OrderCategory, Profile } from '../types'
 
-export default function OrdersPage({ currentProfile }: { currentProfile: Profile | null }) {
+export default function OrdersPage({ currentProfile }: { currentProfile: Profile }) {
   const [orders, setOrders] = useState<ClanOrder[]>([])
   const [categories, setCategories] = useState<OrderCategory[]>([])
   const [activeCategory, setActiveCategory] = useState('')
@@ -19,7 +19,7 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
     if (!activeCategory && categoryRows[0]) setActiveCategory(categoryRows[0].id)
   }
 
-  useEffect(() => { refresh().catch(console.error) }, [])
+  useEffect(() => { refresh().catch((error) => setMessage(error.message)) }, [])
 
   const visible = useMemo(
     () => orders.filter((order) => !activeCategory || order.category_id === activeCategory),
@@ -27,22 +27,13 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
   )
 
   const insertOrder = async (orderSummary: string, payload: Record<string, unknown>) => {
-    if (!supabase || !currentProfile) {
-      setMessage('Demo mode does not write orders.')
-      return
+    try {
+      await apiPost('/api/orders', { category_id: activeCategory, summary: orderSummary, payload })
+      setMessage('Order created and posted to its Discord channel if configured.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not create order.')
     }
-    const { data, error } = await supabase
-      .from('orders')
-      .insert({ category_id: activeCategory, requester_profile_id: currentProfile.id, summary: orderSummary, payload })
-      .select('id')
-      .single()
-    if (error) {
-      setMessage(error.message)
-      return
-    }
-    setMessage('Order created and posted to its Discord channel if configured.')
-    await notifyDiscord(data.id, 'created')
-    await refresh()
   }
 
   const createGenericOrder = async (event: FormEvent) => {
@@ -52,33 +43,19 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
     setSummary('')
   }
 
-  const claim = async (order: ClanOrder) => {
-    if (!supabase) return setMessage('Demo mode does not write orders.')
-    const { error } = await supabase.rpc('claim_order', { target_order: order.id })
-    if (error) return setMessage(error.message)
-    await notifyDiscord(order.id, 'claimed')
-    await refresh()
-  }
-
-  const markReady = async (order: ClanOrder) => {
-    if (!supabase) return setMessage('Demo mode does not write orders.')
-    const { error } = await supabase.rpc('mark_order_ready', { target_order: order.id })
-    if (error) return setMessage(error.message)
-    await notifyDiscord(order.id, 'ready')
-    await refresh()
-  }
-
-  const markCollected = async (order: ClanOrder) => {
-    if (!supabase) return setMessage('Demo mode does not write orders.')
-    const { error } = await supabase.rpc('mark_order_collected', { target_order: order.id })
-    if (error) return setMessage(error.message)
-    await notifyDiscord(order.id, 'collected')
-    await refresh()
+  const transition = async (order: ClanOrder, action: 'claim' | 'ready' | 'collected') => {
+    try {
+      await apiPost('/api/orders/' + order.id + '/' + action)
+      setMessage(action === 'claim' ? 'Order claimed.' : action === 'ready' ? 'Order marked ready.' : 'Order marked collected.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Order update failed.')
+    }
   }
 
   return (
     <div className="page">
-      <header className="page-header"><div><span className="eyebrow">PLAYER-TO-PLAYER ORDERS</span><h1>Orders</h1><p className="muted">Each order type keeps its own tab and fulfiller permissions. These paid member orders stay separate from clan-bank stock.</p></div></header>
+      <header className="page-header"><div><span className="eyebrow">PLAYER-TO-PLAYER ORDERS</span><h1>Orders</h1><p className="muted">Each order type keeps its own tab and fulfiller permissions. Paid member orders stay separate from clan-bank stock.</p></div></header>
 
       <div className="tab-strip">
         {categories.map((category) => (
@@ -102,8 +79,8 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
         <div className="section-heading"><div><span className="eyebrow">QUEUE</span><h2>{categories.find((category) => category.id === activeCategory)?.label ?? 'Orders'} orders</h2></div></div>
         <div className="order-grid">
           {visible.map((order) => {
-            const mine = order.requester_profile_id === currentProfile?.id
-            const claimedByMe = order.claimed_by === currentProfile?.id
+            const mine = order.requester_profile_id === currentProfile.id
+            const claimedByMe = order.claimed_by === currentProfile.id
             return (
               <article className="panel compact order-card" key={order.id}>
                 <div className="order-top">
@@ -111,12 +88,12 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
                   <span className="muted">{new Date(order.created_at).toLocaleString()}</span>
                 </div>
                 <h2>{order.summary}</h2>
-                <p className="muted">Requested by <strong>{order.requester?.koruxa_name ?? 'Clan member'}</strong></p>
+                <p className="muted">Requested by <strong>{order.requester?.koruxa_name ?? order.requester?.display_name ?? 'Clan member'}</strong></p>
                 {order.claimer ? <p className="muted">Claimed by <strong>{order.claimer.koruxa_name ?? order.claimer.display_name}</strong></p> : null}
                 <div className="button-row">
-                  {order.status === 'open' && !mine ? <button className="primary-button" onClick={() => claim(order)}>Claim order</button> : null}
-                  {['claimed', 'in_progress'].includes(order.status) && claimedByMe ? <button className="primary-button" onClick={() => markReady(order)}>Mark ready</button> : null}
-                  {order.status === 'ready' && mine ? <button className="primary-button" onClick={() => markCollected(order)}>Collected</button> : null}
+                  {order.status === 'open' && !mine ? <button className="primary-button" onClick={() => transition(order, 'claim')}>Claim order</button> : null}
+                  {['claimed', 'in_progress'].includes(order.status) && claimedByMe ? <button className="primary-button" onClick={() => transition(order, 'ready')}>Mark ready</button> : null}
+                  {order.status === 'ready' && mine ? <button className="primary-button" onClick={() => transition(order, 'collected')}>Collected</button> : null}
                 </div>
               </article>
             )
