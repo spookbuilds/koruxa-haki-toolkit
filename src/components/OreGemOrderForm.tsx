@@ -4,7 +4,7 @@ import { ORE_GEM_ITEM_CAP, oreGemMaterials, requiredOreForGems } from '../data/o
 type Basket = Record<string, { extraOre: number; gems: number }>
 
 export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: string, payload: Record<string, unknown>) => Promise<void> }) {
-  const [materialName, setMaterialName] = useState(oreGemMaterials[0].name)
+  const [materialName, setMaterialName] = useState<string>(oreGemMaterials[0].name)
   const [type, setType] = useState<'ore' | 'gem'>('ore')
   const [quantity, setQuantity] = useState(1)
   const [notes, setNotes] = useState('')
