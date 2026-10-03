@@ -4,7 +4,7 @@ import { fishCatalogue, fishPrice } from '../data/orderForms'
 type Line = { id: string; fish: string; preparation: 'raw' | 'cooked'; quantity: number; unitPrice: number }
 
 export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string, payload: Record<string, unknown>) => Promise<void> }) {
-  const [fish, setFish] = useState(fishCatalogue[0].name)
+  const [fish, setFish] = useState<string>(fishCatalogue[0].name)
   const [preparation, setPreparation] = useState<'raw' | 'cooked'>('cooked')
   const [quantity, setQuantity] = useState(1)
   const [notes, setNotes] = useState('')
