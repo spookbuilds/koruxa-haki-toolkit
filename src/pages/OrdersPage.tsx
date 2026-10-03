@@ -92,6 +92,7 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
                 {order.claimer ? <p className="muted">Claimed by <strong>{order.claimer.koruxa_name ?? order.claimer.display_name}</strong></p> : null}
                 <div className="button-row">
                   {order.status === 'open' && !mine ? <button className="primary-button" onClick={() => transition(order, 'claim')}>Claim order</button> : null}
+                  {order.status === 'open' && mine ? <span className="muted">Waiting for another clan member to claim this order.</span> : null}
                   {['claimed', 'in_progress'].includes(order.status) && claimedByMe ? <button className="primary-button" onClick={() => transition(order, 'ready')}>Mark ready</button> : null}
                   {order.status === 'ready' && mine ? <button className="primary-button" onClick={() => transition(order, 'collected')}>Collected</button> : null}
                 </div>
