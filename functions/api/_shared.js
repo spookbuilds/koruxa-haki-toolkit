@@ -285,30 +285,138 @@ export async function sendOrderDiscord(env, orderId, event) {
   if (!order?.discord_channel_id) return { skipped: true, reason: 'No Discord channel configured for this order category' }
 
   const payload = parseJson(order.payload_json, {})
-  const lines = Array.isArray(payload.lines)
-    ? payload.lines.slice(0, 20).map((line) => '• ' + String(line.description || line.item || 'Order line')).join('\n')
-    : ''
+  const lines = Array.isArray(payload.lines) ? payload.lines.slice(0, 25) : []
   const notes = String(payload.notes || '').trim()
-  const detail = (lines ? '\n' + lines : '') + (notes ? '\nNotes: ' + notes : '')
+  const formatNumber = (value) => new Intl.NumberFormat('en-GB').format(Number(value || 0))
+  const icons = {
+    'ore-gems': '⛏️',
+    fish: '🐟',
+    smithing: '🔨',
+    crafting: '🧵',
+    jewelery: '💍',
+    herblore: '🧪',
+    fletching: '🏹',
+    farming: '🌱',
+  }
+  const colors = {
+    'ore-gems': 0x2f9fff,
+    fish: 0x38b8e8,
+    smithing: 0xe0a43a,
+    crafting: 0xb88cff,
+    jewelery: 0xd96df2,
+    herblore: 0x77d36b,
+    fletching: 0x65b983,
+    farming: 0x74c95d,
+  }
+  const icon = icons[order.category_id] || '✦'
+  const color = colors[order.category_id] || 0x8d6abe
+
+  const detailLines = lines.map((line) => {
+    const emoji = String(line.emoji || '')
+    const description = String(line.description || line.item || 'Order item').trim()
+    const heading = '**' + (description.startsWith(emoji) || !emoji ? description : emoji + ' ' + description) + '**'
+    const extras = []
+    if (line.unit_price != null && line.line_total != null) {
+      extras.push('↳ ' + formatNumber(line.unit_price) + ' each · **' + formatNumber(line.line_total) + ' GP**')
+    }
+    if (Array.isArray(line.materials) && line.materials.length) {
+      extras.push('↳ Materials: ' + line.materials.map((entry) => formatNumber(entry.quantity) + ' ' + String(entry.item || entry.item_key)).join(' • '))
+    }
+    if (line.exchange_option) extras.push('↳ **' + String(line.exchange_option) + '**')
+    if (Array.isArray(line.give) && line.give.length) {
+      extras.push('↳ Give: ' + line.give.map((entry) => formatNumber(entry.amount) + ' ' + String(entry.name)).join(' • '))
+    }
+    if (line.required_for_gems) {
+      extras.push('↳ Matching ore included: ' + formatNumber(line.required_for_gems))
+    }
+    return [heading, ...extras].join('\n')
+  })
+
   let content = ''
   let allowedUsers = []
+  let embeds = []
 
-  if (event === 'created') content = '**New ' + order.category_label + ' order**\n' + order.requester_name + ': ' + order.summary + detail
-  if (event === 'claimed') content = '**Order claimed**\n' + (order.fulfiller_name || 'A clan member') + ' is working on ' + order.requester_name + "'s order: " + order.summary
-  if (event === 'ready') {
-    const mention = order.requester_discord_id ? '<@' + order.requester_discord_id + '> ' : order.requester_name + ' '
-    if (order.requester_discord_id) allowedUsers = [String(order.requester_discord_id)]
-    content = '🔔 ' + mention + '**your order is ready!**\n' + order.summary + '\nCompleted by ' + (order.fulfiller_name || 'a clan member')
+  if (event === 'created') {
+    const fields = [
+      { name: 'Player', value: String(order.requester_name || 'Clan member').slice(0, 1024), inline: true },
+    ]
+
+    if (order.category_id === 'fish') {
+      const fishCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+      fields.push({ name: 'Fish count', value: formatNumber(fishCount), inline: true })
+    } else if (payload.receive_total) {
+      fields.push({ name: 'Requested', value: formatNumber(payload.receive_total) + ' Overload Potions', inline: true })
+    } else {
+      const itemCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+      if (itemCount) fields.push({ name: 'Item count', value: formatNumber(itemCount), inline: true })
+    }
+
+    if (payload.total_gp) fields.push({ name: 'Order total', value: '🪙 **' + formatNumber(payload.total_gp) + ' GP**', inline: true })
+    if (Array.isArray(payload.give_totals) && payload.give_totals.length) {
+      fields.push({
+        name: 'Total materials to trade',
+        value: payload.give_totals.map((entry) => '**' + formatNumber(entry.amount) + '** ' + String(entry.name)).join('\n').slice(0, 1024),
+        inline: false,
+      })
+    }
+    if (notes) fields.push({ name: 'Notes', value: notes.slice(0, 1024), inline: false })
+
+    embeds = [{
+      title: icon + ' New ' + order.category_label + ' Order',
+      description: (detailLines.join('\n\n') || String(order.summary || '')).slice(0, 4000),
+      color,
+      fields,
+      timestamp: order.created_at || new Date().toISOString(),
+    }]
   }
-  if (event === 'collected') content = '**Order collected**\n' + order.requester_name + ': ' + order.summary
-  if (event === 'cancelled') content = '❌ **Order cancelled**\n' + order.requester_name + ': ' + order.summary
-  if (!content) return { skipped: true, reason: 'Unsupported Discord event' }
 
-  const result = await sendDiscordMessage(env, String(order.discord_channel_id), content, allowedUsers)
+  if (event === 'claimed') {
+    embeds = [{
+      title: '🛠️ Order Claimed',
+      description: '**' + String(order.fulfiller_name || 'A clan member') + '** is now working on **' + String(order.requester_name) + "'s** " + String(order.category_label) + ' order.',
+      color: 0xe0a43a,
+      timestamp: new Date().toISOString(),
+    }]
+  }
+
+  if (event === 'ready') {
+    if (order.requester_discord_id) {
+      content = '<@' + order.requester_discord_id + '>'
+      allowedUsers = [String(order.requester_discord_id)]
+    }
+    embeds = [{
+      title: '✅ Your Order Is Ready!',
+      description: String(order.summary || order.category_label + ' order') + '\nCompleted by **' + String(order.fulfiller_name || 'a clan member') + '**.',
+      color: 0x51c878,
+      timestamp: new Date().toISOString(),
+    }]
+  }
+
+  if (event === 'collected') {
+    embeds = [{
+      title: '📦 Order Collected',
+      description: '**' + String(order.requester_name) + '** collected their ' + String(order.category_label) + ' order.',
+      color: 0x657287,
+      timestamp: new Date().toISOString(),
+    }]
+  }
+
+  if (event === 'cancelled') {
+    embeds = [{
+      title: '❌ Order Cancelled',
+      description: '**' + String(order.requester_name) + '** cancelled their ' + String(order.category_label) + ' order.',
+      color: 0xb34658,
+      timestamp: new Date().toISOString(),
+    }]
+  }
+
+  if (!embeds.length) return { skipped: true, reason: 'Unsupported Discord event' }
+
+  const result = await sendDiscordMessage(env, String(order.discord_channel_id), content, allowedUsers, embeds)
   return { success: true, channel_id: String(order.discord_channel_id), message_id: result.id ?? null }
 }
 
-export async function sendDiscordMessage(env, channelId, content, allowedUsers = []) {
+export async function sendDiscordMessage(env, channelId, content, allowedUsers = [], embeds = []) {
   if (!env.DISCORD_BOT_TOKEN) throw new HttpError(500, 'DISCORD_BOT_TOKEN is not configured')
   const cleanChannelId = String(channelId || '').trim().replace(/^<#(\d+)>$/, '$1')
   if (!/^\d{15,25}$/.test(cleanChannelId)) {
@@ -322,7 +430,8 @@ export async function sendDiscordMessage(env, channelId, content, allowedUsers =
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      content,
+      ...(content ? { content } : {}),
+      ...(embeds?.length ? { embeds } : {}),
       allowed_mentions: allowedUsers.length ? { users: allowedUsers } : { parse: [] },
     }),
   })
