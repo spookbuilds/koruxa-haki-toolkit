@@ -1,11 +1,11 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
 import { getOrderCategories, getProfiles, invokeKoruxa } from '../lib/data'
 import { sanitizeSkillExport } from '../lib/catalog'
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../lib/api'
 import { isOwner, isOfficer } from '../lib/permissions'
-import { isSupabaseConfigured, supabase } from '../lib/supabase'
 import type { AppRole, OrderCategory, Profile } from '../types'
 
-export default function AdminPage({ currentProfile, onProfileChanged }: { currentProfile: Profile | null; onProfileChanged: () => void }) {
+export default function AdminPage({ currentProfile, onProfileChanged }: { currentProfile: Profile; onProfileChanged: () => void }) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [watch, setWatch] = useState<any[]>([])
   const [categories, setCategories] = useState<OrderCategory[]>([])
@@ -18,97 +18,100 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   const [message, setMessage] = useState('')
 
   const refresh = async () => {
-    const [profileRows, categoryRows] = await Promise.all([getProfiles(), getOrderCategories()])
+    const [profileRows, categoryRows, watchRows] = await Promise.all([
+      getProfiles(),
+      getOrderCategories(),
+      apiGet<{ watch: any[] }>('/api/bank/watch'),
+    ])
     setProfiles(profileRows)
     setCategories(categoryRows)
+    setWatch(watchRows.watch ?? [])
     if (!permissionMember && profileRows[0]) setPermissionMember(profileRows[0].id)
-    if (supabase) {
-      const [{ data: watchRows }, { data: permRows }] = await Promise.all([
-        supabase.from('bank_watch_items').select('*').order('display_name'),
-        supabase.from('fulfilment_permissions').select('profile_id,category_id'),
-      ])
-      setWatch(watchRows ?? [])
-      setPermissions(permRows ?? [])
+
+    if (isOfficer(currentProfile.app_role)) {
+      const perms = await apiGet<{ permissions: Array<{ profile_id: string; category_id: string }> }>('/api/admin/fulfilment')
+      setPermissions(perms.permissions ?? [])
     }
   }
-  useEffect(() => { refresh().catch(console.error) }, [])
 
-  if (!isSupabaseConfigured) return <div className="page"><div className="notice">Admin writes are disabled in demo mode. The full controls activate after Supabase setup.</div></div>
-  if (!currentProfile) return null
-
-  const claimInitialOwner = async () => {
-    if (!supabase) return
-    const { data, error } = await supabase.rpc('claim_initial_owner')
-    setMessage(error ? error.message : data ? 'You are now an Owner.' : 'An Owner already exists.')
-    onProfileChanged()
-  }
+  useEffect(() => { refresh().catch((error) => setMessage(error.message)) }, [currentProfile.app_role])
 
   const setRole = async (profile: Profile, role: AppRole) => {
-    if (!supabase) return
-    const { error } = await supabase.rpc('set_member_role', { target_profile: profile.id, new_role: role })
-    setMessage(error ? error.message : 'Role updated.')
-    await refresh()
+    try {
+      await apiPatch('/api/admin/users/' + profile.id + '/role', { app_role: role })
+      setMessage('Role updated.')
+      await refresh()
+      if (profile.id === currentProfile.id) await onProfileChanged()
+    } catch (error: any) {
+      setMessage(error.message)
+    }
   }
 
   const addWatch = async (event: FormEvent) => {
     event.preventDefault()
-    if (!supabase) return
-    const { error } = await supabase.from('bank_watch_items').upsert({
-      item_key: itemKey.trim(),
-      display_name: displayName.trim() || itemKey.trim(),
-      minimum_qty: minimum,
-      preferred_qty: preferred || null,
-      show_on_home: true,
-      updated_by: currentProfile.id,
-    })
-    setMessage(error ? error.message : 'Bank watch item saved.')
-    if (!error) { setItemKey(''); setDisplayName(''); setMinimum(0); setPreferred(0); await refresh() }
+    try {
+      await apiPost('/api/bank/watch', {
+        item_key: itemKey.trim(),
+        display_name: displayName.trim() || itemKey.trim(),
+        minimum_qty: minimum,
+        preferred_qty: preferred || null,
+        show_on_home: true,
+      })
+      setMessage('Bank watch item saved.')
+      setItemKey(''); setDisplayName(''); setMinimum(0); setPreferred(0)
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message)
+    }
   }
 
   const removeWatch = async (key: string) => {
-    if (!supabase) return
-    const { error } = await supabase.from('bank_watch_items').delete().eq('item_key', key)
-    setMessage(error ? error.message : 'Removed from bank watch.')
-    await refresh()
+    try {
+      await apiDelete('/api/bank/watch/' + encodeURIComponent(key))
+      setMessage('Removed from bank watch.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message)
+    }
   }
 
   const togglePermission = async (categoryId: string, enabled: boolean) => {
-    if (!supabase || !permissionMember) return
-    const result = enabled
-      ? await supabase.from('fulfilment_permissions').upsert({ profile_id: permissionMember, category_id: categoryId, granted_by: currentProfile.id })
-      : await supabase.from('fulfilment_permissions').delete().eq('profile_id', permissionMember).eq('category_id', categoryId)
-    setMessage(result.error ? result.error.message : 'Fulfilment permission updated.')
-    await refresh()
+    try {
+      await apiPut('/api/admin/fulfilment', { user_id: permissionMember, category_id: categoryId, enabled })
+      setMessage('Fulfilment permission updated.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message)
+    }
   }
 
   const updateCategoryChannel = async (category: OrderCategory, channelId: string) => {
-    if (!supabase) return
-    const { error } = await supabase.from('order_categories').update({ discord_channel_id: channelId.trim() || null }).eq('id', category.id)
-    setMessage(error ? error.message : 'Discord channel saved for ' + category.label + '.')
-    await refresh()
+    try {
+      await apiPatch('/api/order-categories/' + category.id, { discord_channel_id: channelId.trim() || null })
+      setMessage('Discord channel saved for ' + category.label + '.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message)
+    }
   }
 
   const importCatalog = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
-    if (!files.length || !supabase) return
+    if (!files.length) return
     try {
       let total = 0
       let latestXpTable: number[] = []
       for (const file of files) {
         const parsed = JSON.parse(await file.text())
         const sanitized = sanitizeSkillExport(parsed)
-        if (sanitized.actions.length) {
-          const { error } = await supabase.from('skill_actions').upsert(sanitized.actions, { onConflict: 'action_key' })
-          if (error) throw error
-          total += sanitized.actions.length
-        }
+        const result: any = await apiPost('/api/catalog/import', {
+          actions: sanitized.actions,
+          xp_table: sanitized.xpTable,
+        })
+        total += Number(result.imported ?? sanitized.actions.length)
         if (sanitized.xpTable.length) latestXpTable = sanitized.xpTable
       }
-      if (latestXpTable.length) {
-        const { error } = await supabase.from('app_settings').upsert({ key: 'xp_table', value: latestXpTable, updated_by: currentProfile.id })
-        if (error) throw error
-      }
-      setMessage('Imported ' + total + ' static Koruxa actions. Personal calc/inventory fields were not stored.')
+      setMessage('Imported ' + total + ' static Koruxa actions' + (latestXpTable.length ? ' and refreshed the XP table.' : '.'))
     } catch (error: any) {
       setMessage(error.message ?? 'Import failed.')
     } finally {
@@ -121,6 +124,8 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       setMessage('Syncing…')
       const result = await invokeKoruxa(action)
       setMessage('Sync complete: ' + JSON.stringify(result))
+      await onProfileChanged()
+      await refresh()
     } catch (error: any) {
       setMessage(error.message ?? 'Sync failed.')
     }
@@ -128,61 +133,64 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
 
   const selectedPermissions = new Set(permissions.filter((row) => row.profile_id === permissionMember).map((row) => row.category_id))
 
+  if (!isOfficer(currentProfile.app_role)) {
+    return <div className="page"><div className="notice">This area is for Owners and Officers. Your normal clan tools are available from the navigation.</div></div>
+  }
+
   return (
     <div className="page">
-      <header className="page-header"><div><span className="eyebrow">ACCESS & CONFIGURATION</span><h1>Admin</h1></div></header>
+      <header className="page-header"><div><span className="eyebrow">ACCESS & CONFIGURATION</span><h1>Admin</h1><p className="muted">The first Discord account to sign in is bootstrapped as Owner. Owners can promote the clan owner to a second Owner.</p></div></header>
       {message ? <div className="notice">{message}</div> : null}
 
-      {!isOfficer(currentProfile.app_role) ? (
-        <section className="panel">
-          <h2>Owner setup / restricted area</h2>
-          <p className="muted">On a brand-new install, the first intended owner can claim the initial Owner role. Once an Owner exists, this action will refuse everyone else.</p>
-          <button className="primary-button" onClick={claimInitialOwner}>Claim initial Owner</button>
-        </section>
-      ) : null}
-
       {isOwner(currentProfile.app_role) ? <section className="panel">
-        <div className="panel-title"><div><h2>App roles</h2><p className="muted">Koruxa rank never grants app admin access automatically. You and the clan owner can both be Owner.</p></div></div>
-        <div className="table-wrap"><table><thead><tr><th>Member</th><th>Role</th><th>Set role</th></tr></thead><tbody>
-          {profiles.map((profile) => <tr key={profile.id}><td>{profile.koruxa_name ?? profile.display_name ?? profile.id}</td><td><span className="pill">{profile.app_role}</span></td><td><select value={profile.app_role} onChange={(e) => setRole(profile, e.target.value as AppRole)}><option value="member">Member</option><option value="officer">Officer</option><option value="owner">Owner</option></select></td></tr>)}
+        <div className="panel-title"><div><h2>App roles</h2><p className="muted">Koruxa rank never grants app admin access automatically. Multiple Owners are supported, and the final Owner cannot be demoted.</p></div></div>
+        <div className="table-wrap"><table><thead><tr><th>Member</th><th>Discord</th><th>Role</th><th>Set role</th></tr></thead><tbody>
+          {profiles.map((profile) => <tr key={profile.id}>
+            <td>{profile.koruxa_name ?? profile.display_name ?? profile.id}</td>
+            <td>{profile.discord_global_name ?? profile.discord_username ?? profile.discord_user_id}</td>
+            <td><span className="pill">{profile.app_role}</span></td>
+            <td><select value={profile.app_role} onChange={(e) => setRole(profile, e.target.value as AppRole)}><option value="member">Member</option><option value="officer">Officer</option><option value="owner">Owner</option></select></td>
+          </tr>)}
         </tbody></table></div>
       </section> : null}
 
-      {isOfficer(currentProfile.app_role) ? <>
-        <section className="panel">
-          <div className="panel-title"><div><h2>Koruxa sync</h2><p className="muted">Clan sync uses the server-side clan token. Member sync uses each member's encrypted personal token.</p></div></div>
-          <div className="button-row"><button className="primary-button" onClick={() => sync('sync-me')}>Sync me</button><button className="secondary-button" onClick={() => sync('sync-clan')}>Sync clan + bank</button><button className="secondary-button" onClick={() => sync('sync-all-members')}>Sync connected members</button></div>
-        </section>
+      <section className="panel">
+        <div className="panel-title"><div><h2>Koruxa sync</h2><p className="muted">Clan sync uses the server-side clan token. Member sync uses each member's encrypted personal token.</p></div></div>
+        <div className="button-row">
+          <button className="primary-button" onClick={() => sync('sync-me')}>Sync me</button>
+          <button className="secondary-button" onClick={() => sync('sync-clan')}>Sync clan + bank</button>
+          <button className="secondary-button" onClick={() => sync('sync-all-members')}>Sync connected members</button>
+        </div>
+      </section>
 
-        <section className="panel">
-          <div className="panel-title"><div><h2>Order fulfilment permissions</h2><p className="muted">These are separate from app rank. Use them for cases such as only Spook fulfilling Fish orders.</p></div></div>
-          <label>Member<select value={permissionMember} onChange={(e) => setPermissionMember(e.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.koruxa_name ?? profile.display_name ?? profile.id}</option>)}</select></label>
-          <div className="permission-grid">{categories.map((category) => {
-            const checked = selectedPermissions.has(category.id)
-            return <label className="check-card" key={category.id}><input type="checkbox" checked={checked} onChange={(e) => togglePermission(category.id, e.target.checked)} /><span><strong>{category.label}</strong><small>{category.description}</small></span></label>
-          })}</div>
-        </section>
+      <section className="panel">
+        <div className="panel-title"><div><h2>Order fulfilment permissions</h2><p className="muted">These are separate from app rank. For example, only selected members can be allowed to fulfil Fish orders.</p></div></div>
+        <label>Member<select value={permissionMember} onChange={(e) => setPermissionMember(e.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.koruxa_name ?? profile.display_name ?? profile.id}</option>)}</select></label>
+        <div className="permission-grid">{categories.map((category) => {
+          const checked = selectedPermissions.has(category.id)
+          return <label className="check-card" key={category.id}><input type="checkbox" checked={checked} onChange={(e) => togglePermission(category.id, e.target.checked)} /><span><strong>{category.label}</strong><small>{category.description}</small></span></label>
+        })}</div>
+      </section>
 
-        <section className="panel">
-          <div className="panel-title"><div><h2>Order Discord channels</h2><p className="muted">Every order tab can post to its own Discord channel. Enter the numeric channel ID.</p></div></div>
-          {categories.map((category) => <CategoryChannel key={category.id} category={category} onSave={updateCategoryChannel} />)}
-        </section>
+      <section className="panel">
+        <div className="panel-title"><div><h2>Order Discord channels</h2><p className="muted">Each order tab can post to its own Discord channel. Enter the numeric channel ID.</p></div></div>
+        {categories.map((category) => <CategoryChannel key={category.id} category={category} onSave={updateCategoryChannel} />)}
+      </section>
 
-        <section className="panel">
-          <div className="panel-title"><div><h2>Bank watch list</h2><p className="muted">Only explicitly tracked items can trigger low-stock cards.</p></div></div>
-          <form className="form-grid" onSubmit={addWatch}>
-            <label>Item key<input value={itemKey} onChange={(e) => setItemKey(e.target.value)} placeholder="noctite_ore" required /></label>
-            <label>Display name<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Noctite Ore" /></label>
-            <label>Minimum<input type="number" min={0} value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} /></label>
-            <label>Preferred<input type="number" min={0} value={preferred} onChange={(e) => setPreferred(Number(e.target.value))} /></label>
-            <button className="primary-button">Save tracked item</button>
-          </form>
-          {watch.map((item) => <div className="list-row" key={item.item_key}><div><strong>{item.display_name}</strong><span>{item.item_key} · min {Number(item.minimum_qty).toLocaleString()}</span></div><button className="ghost-button" onClick={() => removeWatch(item.item_key)}>Remove</button></div>)}
-        </section>
-      </> : null}
+      <section className="panel">
+        <div className="panel-title"><div><h2>Bank watch list</h2><p className="muted">Only explicitly tracked items can trigger low-stock cards.</p></div></div>
+        <form className="form-grid" onSubmit={addWatch}>
+          <label>Item key<input value={itemKey} onChange={(e) => setItemKey(e.target.value)} placeholder="noctite_ore" required /></label>
+          <label>Display name<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Noctite Ore" /></label>
+          <label>Minimum<input type="number" min={0} value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} /></label>
+          <label>Preferred<input type="number" min={0} value={preferred} onChange={(e) => setPreferred(Number(e.target.value))} /></label>
+          <button className="primary-button">Save tracked item</button>
+        </form>
+        {watch.map((item) => <div className="list-row" key={item.item_key}><div><strong>{item.display_name}</strong><span>{item.item_key} · min {Number(item.minimum_qty).toLocaleString()}</span></div><button className="ghost-button" onClick={() => removeWatch(item.item_key)}>Remove</button></div>)}
+      </section>
 
       {isOwner(currentProfile.app_role) ? <section className="panel">
-        <div className="panel-title"><div><h2>Static game catalogue</h2><p className="muted">Upload one or more DevTools skill JSON exports. The importer strips personalised calc, bank and inventory fields and stores only reusable action/recipe data.</p></div></div>
+        <div className="panel-title"><div><h2>Static game catalogue</h2><p className="muted">Upload one or more DevTools skill JSON exports. The importer strips personalised calculation/inventory fields and stores reusable action/recipe data only.</p></div></div>
         <input type="file" accept=".json,.txt" multiple onChange={importCatalog} />
       </section> : null}
     </div>
