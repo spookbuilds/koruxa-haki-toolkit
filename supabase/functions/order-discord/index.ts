@@ -37,8 +37,14 @@ Deno.serve(async (req) => {
 
     const requester = order.requester?.koruxa_name ?? order.requester?.display_name ?? 'Clan member'
     const claimer = order.claimer?.koruxa_name ?? order.claimer?.display_name ?? 'Clan member'
+    const payloadLines = Array.isArray(order.payload?.lines)
+      ? order.payload.lines.slice(0, 20).map((line: any) => '• ' + String(line.description ?? line.item ?? 'Order line')).join('\n')
+      : ''
+    const notes = String(order.payload?.notes ?? '').trim()
+    const detailBlock = (payloadLines ? '\n' + payloadLines : '') + (notes ? '\nNotes: ' + notes : '')
+
     let content = ''
-    if (event === 'created') content = '**New ' + order.category.label + ' order**\n' + requester + ': ' + order.summary
+    if (event === 'created') content = '**New ' + order.category.label + ' order**\n' + requester + ': ' + order.summary + detailBlock
     if (event === 'claimed') content = '**Order claimed**\n' + claimer + ' is working on ' + requester + "'s order: " + order.summary
     if (event === 'ready') {
       const mention = order.requester?.discord_user_id ? '<@' + order.requester.discord_user_id + '> ' : requester + ' '
