@@ -158,3 +158,5 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
 .crafter-chip.capable { border-color: #315b49; background: #173228; }
 .crafter-chip.capable small { color: #9fe0bd; }
 .crafter-chip.near { border-color: #725d2d; background: #352a13; }
+
+.discord-login { display: block; text-align: center; text-decoration: none; }
