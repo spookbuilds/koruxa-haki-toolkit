@@ -509,24 +509,18 @@ export async function latestSnapshots(env) {
   return results.map(snapshotFromRow)
 }
 
-export async function sendOrderDiscord(env, orderId, event) {
-  if (!env.DISCORD_BOT_TOKEN) return { skipped: true, reason: 'DISCORD_BOT_TOKEN is not configured' }
-  const order = await env.DB.prepare(
-    `SELECT o.*, c.label AS category_label, c.discord_channel_id,
-            r.discord_id AS requester_discord_id,
-            COALESCE(r.koruxa_name,r.display_name,r.discord_global_name,r.discord_username) AS requester_name,
-            COALESCE(f.koruxa_name,f.display_name,f.discord_global_name,f.discord_username) AS fulfiller_name
-       FROM orders o
-       JOIN order_categories c ON c.id=o.category_id
-       JOIN users r ON r.id=o.requester_user_id
-       LEFT JOIN users f ON f.id=o.claimed_by
-      WHERE o.id=?`,
-  ).bind(orderId).first()
-  if (!order?.discord_channel_id) return { skipped: true, reason: 'No Discord channel configured for this order category' }
+async function ensureOrderDiscordState(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS order_discord_state (
+      order_id TEXT PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+      channel_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`
+  ).run()
+}
 
-  const payload = parseJson(order.payload_json, {})
-  const lines = Array.isArray(payload.lines) ? payload.lines.slice(0, 25) : []
-  const notes = String(payload.notes || '').trim()
+function orderDiscordTicket(order, payload, lines, event) {
   const formatNumber = (value) => new Intl.NumberFormat('en-GB').format(Number(value || 0))
   const icons = {
     'ore-gems': '⛏️',
@@ -539,19 +533,7 @@ export async function sendOrderDiscord(env, orderId, event) {
     farming: '🌱',
     arcana: '🔮',
   }
-  const colors = {
-    'ore-gems': 0x35a7ff,
-    fish: 0xf2c94c,
-    smithing: 0xe49b39,
-    crafting: 0xb77cff,
-    jewelery: 0xd76de8,
-    herblore: 0x72cf72,
-    fletching: 0x62bc8d,
-    farming: 0x79c85d,
-    arcana: 0x7d5cff,
-  }
   const icon = icons[order.category_id] || '✦'
-  const color = colors[order.category_id] || 0x8d6abe
   const categoryLabel =
     order.category_id === 'ore-gems' ? 'Mining · Ore & Uncut Gems' :
     order.category_id === 'jewelery' ? 'Jewellery · Cut Gems' :
@@ -578,95 +560,221 @@ export async function sendOrderDiscord(env, orderId, event) {
     return [heading, ...extras].join('\n')
   })
 
-  let content = ''
-  let allowedUsers = []
-  let embeds = []
+  const notes = String(payload.notes || '').trim()
+  const fields = [
+    { name: '👤 Player', value: String(order.requester_name || 'Clan member').slice(0, 1024), inline: true },
+  ]
 
-  if (event === 'created') {
-    const fields = [
-      { name: '👤 Player', value: String(order.requester_name || 'Clan member').slice(0, 1024), inline: true },
-    ]
-
-    if (order.category_id === 'fish') {
-      const fishCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
-      fields.push({ name: '🐟 Fish count', value: formatNumber(fishCount), inline: true })
-    } else if (payload.receive_total) {
-      fields.push({ name: '⚗️ Requested', value: formatNumber(payload.receive_total) + ' Overload Potions', inline: true })
-    } else {
-      const itemCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
-      if (itemCount) fields.push({ name: '📦 Item count', value: formatNumber(itemCount), inline: true })
-    }
-
-    if (payload.total_gp) fields.push({ name: '🪙 Order total', value: '**' + formatNumber(payload.total_gp) + ' GP**', inline: true })
-    if (Array.isArray(payload.give_totals) && payload.give_totals.length) {
-      fields.push({
-        name: '🔁 Total materials to trade',
-        value: payload.give_totals.map((entry) => '**' + formatNumber(entry.amount) + '** ' + String(entry.name)).join('\n').slice(0, 1024),
-        inline: false,
-      })
-    }
-    if (notes) fields.push({ name: '📝 Notes', value: notes.slice(0, 1024), inline: false })
-
-    embeds = [{
-      author: { name: 'HAKI Toolkit • StrawHats [HAKI]' },
-      title: icon + ' New ' + categoryLabel + ' Order',
-      description: (detailLines.join('\n\n') || String(order.summary || '')).slice(0, 4000),
-      color,
-      fields,
-      footer: { text: 'Clan Exchange • Track status in HAKI Toolkit' },
-      timestamp: order.created_at || new Date().toISOString(),
-    }]
+  if (order.category_id === 'fish') {
+    const fishCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+    fields.push({ name: '🐟 Fish count', value: formatNumber(fishCount), inline: true })
+  } else if (payload.receive_total) {
+    fields.push({ name: '⚗️ Requested', value: formatNumber(payload.receive_total) + ' Overload Potions', inline: true })
+  } else {
+    const itemCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
+    if (itemCount) fields.push({ name: '📦 Item count', value: formatNumber(itemCount), inline: true })
   }
+
+  if (payload.total_gp) {
+    fields.push({ name: '🪙 Order total', value: '**' + formatNumber(payload.total_gp) + ' GP**', inline: true })
+  }
+
+  if (Array.isArray(payload.give_totals) && payload.give_totals.length) {
+    fields.push({
+      name: '🔁 Total materials to trade',
+      value: payload.give_totals.map((entry) => '**' + formatNumber(entry.amount) + '** ' + String(entry.name)).join('\n').slice(0, 1024),
+      inline: false,
+    })
+  }
+
+  if (notes) fields.push({ name: '📝 Notes', value: notes.slice(0, 1024), inline: false })
+
+  let title = icon + ' New ' + categoryLabel + ' Order'
+  let color = 0xf2c94c
+  let statusText = '🟡 **OPEN** · Waiting for a supplier to claim this order.'
 
   if (event === 'claimed') {
-    embeds = [{
-      title: '🛠️ Order Claimed',
-      description: '**' + String(order.fulfiller_name || 'A clan member') + '** is now working on **' + String(order.requester_name) + "'s** " + String(categoryLabel) + ' order.',
-      color: 0xe0a43a,
-      timestamp: new Date().toISOString(),
-    }]
+    title = '🛠️ ' + categoryLabel + ' Order · Claimed'
+    color = 0xf2c94c
+    statusText = '🟡 **CLAIMED** · **' + String(order.fulfiller_name || 'A clan member') + '** is working on this order.'
+  } else if (event === 'ready') {
+    title = '✅ ' + categoryLabel + ' Order · Ready!'
+    color = 0x51c878
+    statusText = payload.total_gp
+      ? '🟢 **READY FOR COLLECTION** · Completed by **' + String(order.fulfiller_name || 'a clan member') + '**.\nPlease create your Koruxa buy orders using the quantities and **unit prices shown above**.'
+      : '🟢 **READY FOR COLLECTION** · Completed by **' + String(order.fulfiller_name || 'a clan member') + '**.\nPlease arrange the material trade shown above.'
+  } else if (event === 'collected') {
+    title = '📦 ' + categoryLabel + ' Order · Collected'
+    color = 0x657287
+    statusText = '⚪ **COLLECTED** · **' + String(order.requester_name || 'The requester') + '** has collected this order.'
+  } else if (event === 'cancelled') {
+    title = '❌ ' + categoryLabel + ' Order · Cancelled'
+    color = 0xb34658
+    statusText = '🔴 **CANCELLED** · This order is no longer active.'
   }
 
-  if (event === 'ready') {
-    if (order.requester_discord_id) {
-      content = '<@' + order.requester_discord_id + '>'
-      allowedUsers = [String(order.requester_discord_id)]
+  fields.unshift({
+    name: 'Status',
+    value: statusText.slice(0, 1024),
+    inline: false,
+  })
+
+  return {
+    author: { name: 'HAKI Toolkit • StrawHats [HAKI]' },
+    title,
+    description: (detailLines.join('\n\n') || String(order.summary || '')).slice(0, 4000),
+    color,
+    fields,
+    footer: {
+      text:
+        event === 'ready' ? 'Order ready • Please create your Koruxa buy orders now' :
+        event === 'collected' ? 'Order complete • Thanks for using the HAKI Exchange' :
+        event === 'cancelled' ? 'Order cancelled' :
+        'Clan Exchange • Track status in HAKI Toolkit',
+    },
+    timestamp:
+      event === 'created' ? (order.created_at || new Date().toISOString()) :
+      new Date().toISOString(),
+  }
+}
+
+export async function sendOrderDiscord(env, orderId, event) {
+  if (!env.DISCORD_BOT_TOKEN) return { skipped: true, reason: 'DISCORD_BOT_TOKEN is not configured' }
+
+  const order = await env.DB.prepare(
+    `SELECT o.*, c.label AS category_label, c.discord_channel_id,
+            r.discord_id AS requester_discord_id,
+            COALESCE(r.koruxa_name,r.display_name,r.discord_global_name,r.discord_username) AS requester_name,
+            COALESCE(f.koruxa_name,f.display_name,f.discord_global_name,f.discord_username) AS fulfiller_name
+       FROM orders o
+       JOIN order_categories c ON c.id=o.category_id
+       JOIN users r ON r.id=o.requester_user_id
+       LEFT JOIN users f ON f.id=o.claimed_by
+      WHERE o.id=?`,
+  ).bind(orderId).first()
+
+  if (!order?.discord_channel_id) {
+    return { skipped: true, reason: 'No Discord channel configured for this order category' }
+  }
+
+  const payload = parseJson(order.payload_json, {})
+  const lines = Array.isArray(payload.lines) ? payload.lines.slice(0, 25) : []
+  const embed = orderDiscordTicket(order, payload, lines, event)
+
+  await ensureOrderDiscordState(env)
+  const stored = await env.DB.prepare(
+    'SELECT channel_id,message_id FROM order_discord_state WHERE order_id=?'
+  ).bind(orderId).first()
+
+  const channelId = String(stored?.channel_id || order.discord_channel_id)
+  let result
+  let edited = false
+
+  if (stored?.message_id) {
+    try {
+      result = await editDiscordMessage(
+        env,
+        channelId,
+        String(stored.message_id),
+        '',
+        [],
+        [embed],
+      )
+      edited = true
+    } catch (error) {
+      console.log('Discord order-card edit failed; replacing card', error)
     }
-    embeds = [{
-      title: '✅ Your Order Is Ready!',
-      description: String(order.summary || categoryLabel + ' order') + '\nCompleted by **' + String(order.fulfiller_name || 'a clan member') + '**.',
-      color: 0x51c878,
-      timestamp: new Date().toISOString(),
-    }]
   }
 
-  if (event === 'collected') {
-    embeds = [{
-      title: '📦 Order Collected',
-      description: '**' + String(order.requester_name) + '** collected their ' + String(categoryLabel) + ' order.',
-      color: 0x657287,
-      timestamp: new Date().toISOString(),
-    }]
+  if (!result) {
+    result = await sendDiscordMessage(env, String(order.discord_channel_id), '', [], [embed])
+    await env.DB.prepare(
+      `INSERT INTO order_discord_state (order_id,channel_id,message_id,updated_at)
+       VALUES (?,?,?,?)
+       ON CONFLICT(order_id) DO UPDATE SET
+         channel_id=excluded.channel_id,
+         message_id=excluded.message_id,
+         updated_at=excluded.updated_at`
+    ).bind(
+      orderId,
+      String(order.discord_channel_id),
+      String(result.id || ''),
+      nowIso(),
+    ).run()
+  } else {
+    await env.DB.prepare(
+      'UPDATE order_discord_state SET updated_at=? WHERE order_id=?'
+    ).bind(nowIso(), orderId).run()
   }
 
-  if (event === 'cancelled') {
-    embeds = [{
-      title: '❌ Order Cancelled',
-      description: '**' + String(order.requester_name) + '** cancelled their ' + String(categoryLabel) + ' order.',
-      color: 0xb34658,
-      timestamp: new Date().toISOString(),
-    }]
+  let ready_ping_message_id = null
+  if (event === 'ready' && order.requester_discord_id) {
+    const requesterId = String(order.requester_discord_id)
+    const pingText =
+      '<@' + requesterId + '> your **' + String(order.category_label || 'order') +
+      '** order is ready! Please make your Koruxa buy orders using the quantities and unit prices on the updated card above.'
+    const ping = await sendDiscordMessage(
+      env,
+      channelId,
+      pingText.slice(0, 1900),
+      [requesterId],
+      [],
+    )
+    ready_ping_message_id = ping?.id ?? null
   }
 
-  if (!embeds.length) return { skipped: true, reason: 'Unsupported Discord event' }
-
-  const result = await sendDiscordMessage(env, String(order.discord_channel_id), content, allowedUsers, embeds)
   return {
     success: true,
-    channel_id: String(order.discord_channel_id),
-    message_id: result.id ?? null,
-    warning: result.warning ?? null,
+    channel_id: channelId,
+    message_id: result?.id ?? stored?.message_id ?? null,
+    edited,
+    ready_ping_message_id,
+    warning: result?.warning ?? null,
   }
+}
+
+export async function editDiscordMessage(env, channelId, messageId, content, allowedUsers = [], embeds = []) {
+  if (!env.DISCORD_BOT_TOKEN) throw new HttpError(500, 'DISCORD_BOT_TOKEN is not configured')
+  const cleanChannelId = String(channelId || '').trim().replace(/^<#(\d+)>$/, '$1')
+  const cleanMessageId = String(messageId || '').trim()
+
+  if (!/^\d{15,25}$/.test(cleanChannelId) || !/^\d{15,25}$/.test(cleanMessageId)) {
+    throw new HttpError(400, 'Discord channel/message IDs are invalid')
+  }
+
+  const response = await fetch(
+    'https://discord.com/api/v10/channels/' + cleanChannelId + '/messages/' + cleanMessageId,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        content: content || '',
+        embeds: embeds || [],
+        allowed_mentions: allowedUsers.length ? { users: allowedUsers } : { parse: [] },
+      }),
+    },
+  )
+
+  const responseText = await response.text()
+  let responseBody = null
+  try { responseBody = responseText ? JSON.parse(responseText) : null }
+  catch { responseBody = responseText || null }
+
+  if (!response.ok) {
+    const discordMessage = typeof responseBody === 'object' && responseBody
+      ? String(responseBody.message || responseBody.error || '')
+      : String(responseBody || '')
+    throw new HttpError(
+      502,
+      'Discord rejected the order-card edit (' + response.status + ')' + (discordMessage ? ': ' + discordMessage : ''),
+      { discord_status: response.status, discord_response: responseBody, channel_id: cleanChannelId, message_id: cleanMessageId },
+    )
+  }
+
+  return responseBody || { success: true }
 }
 
 export async function sendDiscordMessage(env, channelId, content, allowedUsers = [], embeds = []) {
