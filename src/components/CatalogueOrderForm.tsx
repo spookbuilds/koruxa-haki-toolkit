@@ -249,6 +249,7 @@ export default function CatalogueOrderForm({
         item: label,
         item_key: line.action.reward_item_key,
         action_key: line.action.action_key,
+        offer_key: line.action.action_key,
         skill_key: skillKey,
         quantity: line.quantity,
         emoji,
