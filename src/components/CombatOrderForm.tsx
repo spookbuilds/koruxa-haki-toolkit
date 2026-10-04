@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPut } from '../lib/api'
 import { itemEmoji } from '../data/orderVisuals'
+import combatHeader from '../../assets/images/orders/combat-header.png'
 
 type MonsterIndex = { key: string; name: string; slayer_only?: boolean }
 
@@ -247,7 +248,10 @@ export default function CombatOrderForm({
 
   return (
     <div className="catalogue-order-board combat-order-board">
-      <div className="board-heading catalogue-heading">
+      <div
+        className="board-heading catalogue-heading board-heading-art"
+        style={{ backgroundImage: `linear-gradient(90deg, rgba(14,10,18,.92), rgba(37,18,31,.58) 55%, rgba(9,11,17,.80)), url(${combatHeader})` }}
+      >
         <span>LIVE KORUXA DROP TABLES</span>
         <h2>Combat Drops Order Board</h2>
         <p>Only drops from monsters an available Combat supplier has explicitly chosen to farm can be ordered here.</p>
