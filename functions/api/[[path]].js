@@ -263,20 +263,29 @@ async function syncXpTableFromWiki(env) {
 
 async function linkCatalogIngredients(env) {
   const { results } = await env.DB.prepare(
-    'SELECT action_key,skill_key,reward_item_key,ingredients_json FROM skill_actions'
+    'SELECT action_key,skill_key,reward_item_key,ingredients_json,is_recipe FROM skill_actions'
   ).all()
 
-  const producerByItem = new Map()
+  const producersByItem = new Map()
   for (const row of results) {
     if (!row.reward_item_key) continue
-    const current = producerByItem.get(String(row.reward_item_key))
-    const preferred = String(row.action_key).startsWith('wiki_')
-    if (!current || preferred) {
-      producerByItem.set(String(row.reward_item_key), {
-        action_key: String(row.action_key),
-        skill_key: String(row.skill_key),
-      })
-    }
+    const key = String(row.reward_item_key)
+    if (!producersByItem.has(key)) producersByItem.set(key, [])
+    producersByItem.get(key).push({
+      action_key: String(row.action_key),
+      skill_key: String(row.skill_key),
+      is_recipe: Boolean(row.is_recipe),
+    })
+  }
+
+  const canonicalSkillForItem = (itemKey) => {
+    const key = String(itemKey || '').toLowerCase()
+    if (key.endsWith('_bar')) return 'smithing'
+    if (key.endsWith('_log')) return 'woodcutting'
+    if (key.endsWith('_ore')) return 'mining'
+    if (key.endsWith('_rune')) return 'arcana'
+    if (key.includes('uncut_')) return 'mining'
+    return null
   }
 
   const updates = []
@@ -285,7 +294,18 @@ async function linkCatalogIngredients(env) {
     if (!Array.isArray(ingredients) || !ingredients.length) continue
 
     const linked = ingredients.map((ingredient) => {
-      const producer = producerByItem.get(String(ingredient.item_key || ''))
+      const candidates = producersByItem.get(String(ingredient.item_key || '')) || []
+      const sameSkill = candidates.find((candidate) => candidate.skill_key === String(row.skill_key))
+      const canonicalSkill = canonicalSkillForItem(ingredient.item_key)
+      const canonical = canonicalSkill
+        ? candidates.find((candidate) => candidate.skill_key === canonicalSkill)
+        : null
+
+      // Never guess across unrelated skills. Prefer the recipe in the same skill,
+      // otherwise only a clearly canonical producer (bars=Smithing, logs=Woodcutting,
+      // ores=Mining, runes=Arcana). If neither exists, leave it as a raw ingredient.
+      const producer = sameSkill || canonical || null
+
       return {
         ...ingredient,
         src_skill: producer?.skill_key,
