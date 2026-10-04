@@ -691,7 +691,9 @@ async function combatMonsterIndex(env, force = false) {
       for (const [key, name] of monsterLinksFromHtml(html)) monsters.set(key, name)
 
       if (path === '/wiki/slayer.html') {
-        const taskSection = String(html).split(/<h2\b[^>]*>\s*Task-only monsters\s*<\/h2>/i)[1] || ''
+        const heading = String(html).match(/<h2\b[^>]*>[\s\S]*?Task-only monsters[\s\S]*?<\/h2>/i)?.[0] || ''
+        const startAt = heading ? String(html).indexOf(heading) + heading.length : -1
+        const taskSection = startAt >= 0 ? String(html).slice(startAt) : ''
         const taskTable = taskSection.match(/<table\b[^>]*>[\s\S]*?<\/table>/i)?.[0] || taskSection
         for (const [key, name] of monsterLinksFromHtml(taskTable)) {
           monsters.set(key, name)
