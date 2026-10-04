@@ -1,6 +1,15 @@
 import { useMemo, useState } from 'react'
 import { overloadExchange, type OverloadExchangeItem } from '../data/overloadExchange'
 import potionsHeader from '../../assets/images/orders/potions-header.png'
+import SupplierOfferPanel, { type SupplierOfferOption } from './SupplierOfferPanel'
+
+const overloadSupplierOptions: SupplierOfferOption[] = [{
+  key: 'special:overload-exchange',
+  label: 'Overload Potion Exchange',
+  group: 'Clan Exchange',
+  skillKey: null,
+  minLevel: null,
+}]
 
 type BasketLine = {
   id: string
@@ -73,6 +82,7 @@ export default function OverloadExchangeForm({ onSubmit }: { onSubmit: (summary:
         exchange_tier: line.item.id,
         exchange_option: option.name,
         give: trade,
+        offer_key: 'special:overload-exchange',
         description: line.item.icon + ' ' + receiveAmount.toLocaleString() + ' × Overload Potion',
       }
     })
@@ -142,6 +152,13 @@ export default function OverloadExchangeForm({ onSubmit }: { onSubmit: (summary:
       </div>
 
       {error ? <div className="notice danger-note">{error}</div> : null}
+
+      <SupplierOfferPanel
+        categoryId="herblore"
+        options={overloadSupplierOptions}
+        selectedKey="special:overload-exchange"
+        basketKeys={basket.length ? ['special:overload-exchange'] : []}
+      />
 
       <div className="order-preview-board">
         <div className="order-preview-title"><span>YOUR OVERLOAD EXCHANGE</span><strong>{totals.receiveTotal.toLocaleString()} potions</strong></div>
