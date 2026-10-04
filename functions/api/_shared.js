@@ -126,6 +126,7 @@ export function profileFromRow(row) {
     discord_global_name: row.discord_global_name,
     discord_avatar: row.discord_avatar,
     app_role: row.app_role,
+    access_role: Boolean(row.clan_verified) || row.app_role === 'owner' ? row.app_role : 'outsider',
     koruxa_character_id: row.koruxa_character_id == null ? null : Number(row.koruxa_character_id),
     koruxa_name: row.koruxa_name,
     koruxa_connected: Boolean(row.koruxa_connected),
