@@ -514,11 +514,241 @@ async function ensurePlannerData(env, force = false) {
 }
 
 async function ensureCurrentOrderCategories(env) {
+  await env.DB.batch([
+    env.DB.prepare(`INSERT OR IGNORE INTO order_categories (id,label,description,discord_channel_id,enabled,sort_order) VALUES ('logs-seeds','Logs & Seeds','Woodcutting logs and seed supplies',NULL,1,25)`),
+    env.DB.prepare(`INSERT OR IGNORE INTO order_categories (id,label,description,discord_channel_id,enabled,sort_order) VALUES ('arcana','Arcana · Runes','Crafted rune orders',NULL,1,65)`),
+    env.DB.prepare(`INSERT OR IGNORE INTO order_categories (id,label,description,discord_channel_id,enabled,sort_order) VALUES ('thieving','Thieving Supplies','Items sourced from Thieving nodes',NULL,1,75)`),
+    env.DB.prepare(`INSERT OR IGNORE INTO order_categories (id,label,description,discord_channel_id,enabled,sort_order) VALUES ('construction','Construction','Construction crafts and materials',NULL,1,80)`),
+    env.DB.prepare(`INSERT OR IGNORE INTO order_categories (id,label,description,discord_channel_id,enabled,sort_order) VALUES ('tinkering','Tinkering','Tinkering crafts and devices',NULL,1,85)`),
+    env.DB.prepare(`INSERT OR IGNORE INTO order_categories (id,label,description,discord_channel_id,enabled,sort_order) VALUES ('combat','Combat Drops','Drops from monsters suppliers are willing to farm',NULL,1,90)`),
+    env.DB.prepare(`UPDATE order_categories SET label='Cooking & Fish',description='Cooked fish and non-fish Cooking orders' WHERE id='fish'`),
+  ])
+}
+
+
+async function ensureCombatOrderTables(env) {
+  await env.DB.batch([
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS combat_supplier_monsters (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        monster_key TEXT NOT NULL,
+        monster_name TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (user_id, monster_key)
+      )`
+    ),
+    env.DB.prepare(
+      `CREATE TABLE IF NOT EXISTS combat_monster_cache (
+        monster_key TEXT PRIMARY KEY,
+        monster_name TEXT NOT NULL,
+        area TEXT,
+        combat_level INTEGER,
+        monster_type TEXT,
+        slayer_only INTEGER NOT NULL DEFAULT 0,
+        drops_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`
+    ),
+  ])
+}
+
+function prettyMonsterName(slug) {
+  return String(slug || '').split('_').filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ')
+}
+
+function monsterLinksFromHtml(html) {
+  const found = new Map()
+  const pattern = /(?:https:\/\/koruxa\.com)?\/wiki\/monsters\/([a-z0-9_-]+)\.html/gi
+  for (const match of String(html || '').matchAll(pattern)) {
+    const key = match[1]
+    if (key && key !== 'index') found.set(key, prettyMonsterName(key))
+  }
+  return found
+}
+
+async function combatMonsterIndex(env, force = false) {
+  const row = await env.DB.prepare("SELECT value_json,updated_at FROM app_settings WHERE key='combat_monster_index'").first()
+  const age = row?.updated_at ? Date.now() - new Date(row.updated_at).getTime() : Infinity
+  const cached = parseJson(row?.value_json, [])
+  if (!force && Array.isArray(cached) && cached.length && age < 24 * 60 * 60 * 1000) return cached
+
+  const monsters = new Map()
+  const sources = [
+    '/sitemap.xml',
+    '/wiki/sitemap.xml',
+    '/wiki/slayer.html',
+    '/wiki/guides/combat.html',
+    '/wiki/guides/c-combat-guide.html',
+  ]
+
+  for (const path of sources) {
+    try {
+      const html = await fetchWikiHtml(path)
+      for (const [key, name] of monsterLinksFromHtml(html)) monsters.set(key, name)
+    } catch (error) {
+      console.log('Combat monster index source failed', path, error)
+    }
+  }
+
+  // Safe fallback from official combat/slayer wiki names so the selector is
+  // never empty if Koruxa does not expose a crawlable sitemap.
+  const fallback = [
+    'Goblin Chief','Lich','Mycorrhiza','Tide Warden','Pyroclast','Quartzmother',
+    'Spider Queen','Charnel King','Orc Warlord','Umbral Sovereign','Wyvernqueen',
+    'Archmage','Rift Sovereign','Elder Dragon','Elder Titan','Shadow Lord',
+    'Nightmare Sovereign','Void Titan','Drakonis, the Infernal Wyrm',
+    'Gloomgrub','Skritchling','Shriekshade','Shrieking Shade','Iron Graspfiend',
+    'Graspfiend','Stonelurk','Mold Stalker','Mossback','Sporecrest',
+    'Toxic Sporecrest','Flickerfiend','Embertick','Buzzhorde','Sporethorn',
+    'Gorevine','Ravenous Gorevine','Stonegaze','Plaguespinner','Dark Wizard',
+    'Sandskink','Marrow Beast','Spiritcaster','Spiritblade','Greater Veilstalker',
+    'Sparkfiend','Dreadwolf','Magma Hound',
+  ]
+  for (const name of fallback) {
+    const key = slugify(name)
+    if (!monsters.has(key)) monsters.set(key, name)
+  }
+
+  const result = [...monsters.entries()]
+    .map(([key, name]) => ({ key, name }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   await env.DB.prepare(
-    `INSERT OR IGNORE INTO order_categories
-      (id,label,description,discord_channel_id,enabled,sort_order)
-      VALUES ('arcana','Arcana · Runes','Crafted rune orders',NULL,1,65)`
+    `INSERT INTO app_settings (key,value_json,updated_by,updated_at)
+     VALUES ('combat_monster_index',?,NULL,?)
+     ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`
+  ).bind(JSON.stringify(result), nowIso()).run()
+
+  return result
+}
+
+function parseMonsterPage(html, monsterKey) {
+  const titleMatch = String(html || '').match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)
+  const monsterName = titleMatch ? htmlCellText(titleMatch[1]) : prettyMonsterName(monsterKey)
+  const rows = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+
+  let area = null
+  let combatLevel = null
+  let monsterType = null
+  let slayerOnly = false
+  const drops = []
+
+  for (const rowHtml of rows) {
+    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((match) => htmlCellText(match[1]))
+      .filter(Boolean)
+    if (!cells.length) continue
+
+    const label = cells[0].toLowerCase()
+    if (label === 'area') area = cells[1] || area
+    if (label === 'combat level') combatLevel = wikiNumber(cells[1])
+    if (label === 'type') monsterType = cells[1] || monsterType
+    if (label === 'slayer' && /only/i.test(cells[1] || '')) slayerOnly = true
+
+    const chance = cells[cells.length - 1]
+    if (!/^(always|\d+(?:\.\d+)?%|\d+\s+in\s+[\d,]+(?:\)|\b))/i.test(chance || '')) continue
+    if (cells.length < 3) continue
+
+    const item = cells[cells.length - 3]
+    const qty = cells[cells.length - 2]
+    if (!item || /^item$/i.test(item) || /^qty$/i.test(qty)) continue
+
+    drops.push({
+      item,
+      item_key: slugify(item.replace(/[⭐🌙☀️]/g, '').trim()),
+      qty,
+      chance,
+    })
+  }
+
+  return {
+    key: monsterKey,
+    name: monsterName,
+    area,
+    combat_level: combatLevel,
+    type: monsterType,
+    slayer_only: slayerOnly,
+    drops: [...new Map(drops.map((drop) => [drop.item + '|' + drop.qty + '|' + drop.chance, drop])).values()],
+  }
+}
+
+async function syncCombatMonster(env, monsterKey) {
+  await ensureCombatOrderTables(env)
+  const html = await fetchWikiHtml('/wiki/monsters/' + monsterKey + '.html')
+  const monster = parseMonsterPage(html, monsterKey)
+  if (!monster.drops.length) throw new HttpError(502, 'Could not read the Koruxa drop table for ' + monster.name)
+
+  await env.DB.prepare(
+    `INSERT INTO combat_monster_cache
+      (monster_key,monster_name,area,combat_level,monster_type,slayer_only,drops_json,updated_at)
+     VALUES (?,?,?,?,?,?,?,?)
+     ON CONFLICT(monster_key) DO UPDATE SET
+       monster_name=excluded.monster_name,area=excluded.area,combat_level=excluded.combat_level,
+       monster_type=excluded.monster_type,slayer_only=excluded.slayer_only,
+       drops_json=excluded.drops_json,updated_at=excluded.updated_at`
+  ).bind(
+    monster.key, monster.name, monster.area, monster.combat_level, monster.type,
+    monster.slayer_only ? 1 : 0, JSON.stringify(monster.drops), nowIso()
   ).run()
+
+  return monster
+}
+
+async function combatAvailableCatalogue(env) {
+  await ensureCombatOrderTables(env)
+  await ensureOrderSupplierStatus(env)
+
+  const { results } = await env.DB.prepare(
+    `SELECT DISTINCT csm.monster_key,csm.monster_name,
+            COALESCE(u.koruxa_name,u.display_name,u.discord_global_name,u.discord_username,'Clan member') AS supplier_name
+       FROM combat_supplier_monsters csm
+       JOIN fulfilment_permissions fp
+         ON fp.user_id=csm.user_id AND fp.category_id='combat'
+       JOIN users u ON u.id=csm.user_id AND u.active=1
+       LEFT JOIN order_supplier_status s
+         ON s.user_id=csm.user_id AND s.category_id='combat'
+      WHERE COALESCE(s.status,'available')='available'
+      ORDER BY csm.monster_name,supplier_name`
+  ).all()
+
+  const byMonster = new Map()
+  for (const row of results) {
+    if (!byMonster.has(row.monster_key)) {
+      byMonster.set(row.monster_key, {
+        key: row.monster_key,
+        name: row.monster_name,
+        suppliers: [],
+      })
+    }
+    byMonster.get(row.monster_key).suppliers.push(row.supplier_name)
+  }
+
+  const monsters = []
+  for (const entry of byMonster.values()) {
+    let cached = await env.DB.prepare('SELECT * FROM combat_monster_cache WHERE monster_key=?').bind(entry.key).first()
+    const stale = !cached?.updated_at || Date.now() - new Date(cached.updated_at).getTime() > 7 * 24 * 60 * 60 * 1000
+    if (!cached || stale) {
+      try {
+        await syncCombatMonster(env, entry.key)
+        cached = await env.DB.prepare('SELECT * FROM combat_monster_cache WHERE monster_key=?').bind(entry.key).first()
+      } catch (error) {
+        console.log('Combat monster refresh failed', entry.key, error)
+      }
+    }
+    if (!cached) continue
+    monsters.push({
+      key: entry.key,
+      name: cached.monster_name || entry.name,
+      area: cached.area || null,
+      combat_level: cached.combat_level == null ? null : Number(cached.combat_level),
+      type: cached.monster_type || null,
+      slayer_only: Boolean(cached.slayer_only),
+      suppliers: entry.suppliers,
+      drops: parseJson(cached.drops_json, []),
+    })
+  }
+
+  return monsters
 }
 
 async function ensureMemberPreferences(env) {
