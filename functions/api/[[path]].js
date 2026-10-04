@@ -570,6 +570,43 @@ async function orderRows(env) {
   }))
 }
 
+async function ensureOrderSupplierStatus(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS order_supplier_status (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category_id TEXT NOT NULL REFERENCES order_categories(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available','busy')),
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, category_id)
+    )`
+  ).run()
+}
+
+async function orderSuppliers(env, currentUserId = null) {
+  await ensureOrderSupplierStatus(env)
+  const { results } = await env.DB.prepare(
+    `SELECT fp.user_id, fp.category_id,
+            COALESCE(u.koruxa_name,u.display_name,u.discord_global_name,u.discord_username,'Clan member') AS member_name,
+            COALESCE(s.status,'available') AS supplier_status,
+            s.updated_at AS status_updated_at
+       FROM fulfilment_permissions fp
+       JOIN users u ON u.id=fp.user_id
+       LEFT JOIN order_supplier_status s
+         ON s.user_id=fp.user_id AND s.category_id=fp.category_id
+      WHERE u.active=1
+      ORDER BY fp.category_id, member_name`
+  ).all()
+
+  return results.map((row) => ({
+    profile_id: row.user_id,
+    category_id: row.category_id,
+    name: row.member_name,
+    status: row.supplier_status === 'busy' ? 'busy' : 'available',
+    updated_at: row.status_updated_at || null,
+    is_self: currentUserId ? row.user_id === currentUserId : false,
+  }))
+}
+
 async function canFulfil(env, user, categoryId) {
   if (!user.clan_verified && user.app_role !== 'owner') return false
   if (OFFICER_ROLES.includes(user.app_role)) return true
@@ -1131,6 +1168,39 @@ async function handle(context) {
     }
   }
 
+  if (method === 'GET' && joined === 'order-suppliers') {
+    const user = await requireUser(context)
+    return json({ suppliers: await orderSuppliers(env, user.id) })
+  }
+
+  if (parts[0] === 'order-suppliers' && parts[1] && parts[2] === 'status' && method === 'PUT') {
+    const user = await requireUser(context)
+    const categoryId = String(parts[1])
+    const permission = await env.DB.prepare(
+      'SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id=?'
+    ).bind(user.id, categoryId).first()
+
+    if (!permission) {
+      throw new HttpError(403, 'Only designated suppliers can change availability for this shop')
+    }
+
+    const body = await bodyJson(request)
+    const status = String(body.status || '').trim().toLowerCase()
+    if (!['available','busy'].includes(status)) {
+      throw new HttpError(400, 'Supplier status must be available or busy')
+    }
+
+    await ensureOrderSupplierStatus(env)
+    await env.DB.prepare(
+      `INSERT INTO order_supplier_status (user_id,category_id,status,updated_at)
+       VALUES (?,?,?,?)
+       ON CONFLICT(user_id,category_id)
+       DO UPDATE SET status=excluded.status,updated_at=excluded.updated_at`
+    ).bind(user.id, categoryId, status, nowIso()).run()
+
+    return json({ success: true, category_id: categoryId, status })
+  }
+
   if (method === 'GET' && joined === 'order-categories') {
     await requireUser(context)
     await ensureCurrentOrderCategories(env)
@@ -1259,7 +1329,11 @@ async function handle(context) {
          ON CONFLICT(user_id,category_id) DO UPDATE SET granted_by=excluded.granted_by`,
       ).bind(userId, categoryId, actor.id, nowIso()).run()
     } else {
-      await env.DB.prepare('DELETE FROM fulfilment_permissions WHERE user_id=? AND category_id=?').bind(userId, categoryId).run()
+      await ensureOrderSupplierStatus(env)
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM fulfilment_permissions WHERE user_id=? AND category_id=?').bind(userId, categoryId),
+        env.DB.prepare('DELETE FROM order_supplier_status WHERE user_id=? AND category_id=?').bind(userId, categoryId),
+      ])
     }
     return json({ success: true })
   }
