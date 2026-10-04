@@ -84,6 +84,7 @@ function preferredGroups(skillKey: string, groups: string[]) {
     ],
     herblore: ['Potions','Super Potions','Special Potions','Overloads'],
     farming: ['Seeds','Saplings','Crops & Produce','Herbs','Flowers','Fruit'],
+    arcana: ['Runes','Other Arcana'],
   }
 
   const ranking = order[skillKey] ?? []
@@ -231,7 +232,10 @@ export default function CatalogueOrderForm({
 
   return (
     <div className="catalogue-order-board">
-      <div className="board-heading catalogue-heading board-heading-art" style={{ backgroundImage: `linear-gradient(90deg, rgba(8,17,30,.92), rgba(24,18,43,.60) 55%, rgba(8,14,24,.78)), url(${orderHeaderImages[skillKey]})` }}>
+      <div
+        className={orderHeaderImages[skillKey] ? 'board-heading catalogue-heading board-heading-art' : 'board-heading catalogue-heading'}
+        style={orderHeaderImages[skillKey] ? { backgroundImage: `linear-gradient(90deg, rgba(8,17,30,.92), rgba(24,18,43,.60) 55%, rgba(8,14,24,.78)), url(${orderHeaderImages[skillKey]})` } : undefined}
+      >
         <span>OFFICIAL KORUXA CATALOGUE</span>
         <h2>{title} Order Board</h2>
         <p>{subtitle ?? 'Choose an item, enter the amount, and the required crafting materials are shown automatically.'}</p>
