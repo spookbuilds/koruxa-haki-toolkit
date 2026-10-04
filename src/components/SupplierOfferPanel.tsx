@@ -45,11 +45,13 @@ export default function SupplierOfferPanel({
   options,
   selectedKey,
   basketKeys = [],
+  onCoverageChange,
 }: {
   categoryId: string
   options: SupplierOfferOption[]
   selectedKey?: string
   basketKeys?: string[]
+  onCoverageChange?: (selectedKeys: Set<string>) => void
 }) {
   const [data, setData] = useState<SupplierResponse | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -71,6 +73,15 @@ export default function SupplierOfferPanel({
   useEffect(() => {
     load()
   }, [categoryId])
+
+  useEffect(() => {
+    if (!data || !onCoverageChange) return
+    const selectedKeys = new Set<string>()
+    for (const supplier of data.suppliers) {
+      for (const offer of supplier.offers) selectedKeys.add(offer.key)
+    }
+    onCoverageChange(selectedKeys)
+  }, [data, onCoverageChange])
 
   const me = data?.suppliers.find((supplier) => supplier.is_self)
   const currentLevelFor = (option: SupplierOfferOption) => {
