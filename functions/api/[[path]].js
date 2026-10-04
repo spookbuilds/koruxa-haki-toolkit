@@ -1179,6 +1179,7 @@ async function supplierOfferRows(env, categoryId, currentUserId) {
 
   return supplierRows.map((row) => {
     const skills = parseJson(row.skills_json, [])
+    const normalizedSkills = normalizeSkills(skills)
     const offers = (offersByUser.get(row.user_id) || []).map((offer) => {
       const minLevel = offer.min_level == null ? null : Number(offer.min_level)
       const level = offer.skill_key ? supplierSkillLevel(skills, offer.skill_key) : null
@@ -1200,6 +1201,9 @@ async function supplierOfferRows(env, categoryId, currentUserId) {
       status: row.supplier_status === 'busy' ? 'busy' : 'available',
       is_self: row.user_id === currentUserId,
       offers,
+      skill_levels: row.user_id === currentUserId
+        ? Object.fromEntries(normalizedSkills.map((entry) => [String(entry.skill_key), Number(entry.level || 0)]))
+        : undefined,
     }
   })
 }
