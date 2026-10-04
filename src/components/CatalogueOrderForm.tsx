@@ -126,6 +126,7 @@ export default function CatalogueOrderForm({
   const [basket, setBasket] = useState<BasketLine[]>([])
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
+  const [supplierSelectedKeys, setSupplierSelectedKeys] = useState<Set<string> | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -297,7 +298,11 @@ export default function CatalogueOrderForm({
                 <button
                   type="button"
                   key={action.action_key}
-                  className={selected?.action_key === action.action_key ? 'item-choice active' : 'item-choice'}
+                  className={
+                    'item-choice' +
+                    (selected?.action_key === action.action_key ? ' active' : '') +
+                    (supplierSelectedKeys && !supplierSelectedKeys.has(action.action_key) ? ' no-supplier' : '')
+                  }
                   onClick={() => setSelectedKey(action.action_key)}
                 >
                   <span className="item-choice-emoji">{itemEmoji(label, skillKey)}</span>
@@ -348,6 +353,7 @@ export default function CatalogueOrderForm({
         options={supplierOptions}
         selectedKey={selected?.action_key}
         basketKeys={basket.map((line) => line.action.action_key)}
+        onCoverageChange={setSupplierSelectedKeys}
       />
 
       <div className="order-preview-board">
