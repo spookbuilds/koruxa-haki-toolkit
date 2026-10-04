@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { overloadExchange, type OverloadExchangeItem } from '../data/overloadExchange'
+import potionsHeader from '../../assets/images/orders/potions-header.png'
 
 type BasketLine = {
   id: string
@@ -89,7 +90,7 @@ export default function OverloadExchangeForm({ onSubmit }: { onSubmit: (summary:
 
   return (
     <div className="overload-exchange-board">
-      <div className="board-heading potion-heading">
+      <div className="board-heading potion-heading board-heading-art" style={{ backgroundImage: `linear-gradient(90deg, rgba(12,18,35,.92), rgba(47,22,65,.60) 55%, rgba(19,36,19,.78)), url(${potionsHeader})` }}>
         <span>CLAN MATERIAL EXCHANGE</span>
         <h2>Overload Potion Exchange</h2>
         <p>Overloads use the clan's existing material-trade rules — not a gold price.</p>
