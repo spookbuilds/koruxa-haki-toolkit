@@ -72,6 +72,7 @@ export interface Profile {
   koruxa_connected?: boolean
   clan_verified?: boolean
   last_koruxa_sync_at?: string | null
+  timezone?: string | null
 }
 
 export interface OrderCategory {
