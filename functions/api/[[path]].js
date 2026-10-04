@@ -55,6 +55,7 @@ const PLANNER_SKILLS = [
   'alchemy',
   'construction',
   'tinkering',
+  'farming',
 ]
 const WIKI_SKILLS = new Set([...PLANNER_SKILLS, ...WIKI_ORDER_SKILLS])
 
