@@ -59,7 +59,7 @@ export default function App() {
         </> : <>
           <Route path="/" element={<HomePage />} />
           <Route path="/members" element={<MembersPage currentProfile={profile} onProfileChanged={loadProfile} />} />
-          <Route path="/leaderboards" element={<LeaderboardsPage />} />
+          <Route path="/leaderboards" element={<LeaderboardsPage currentProfile={profile} />} />
           <Route path="/planner" element={<PlannerPage currentProfile={profile} />} />
           <Route path="/crafters" element={<CraftersPage />} />
           <Route path="/orders" element={<OrdersPage currentProfile={profile} onProfileChanged={loadProfile} />} />
