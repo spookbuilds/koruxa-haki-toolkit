@@ -62,23 +62,28 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
 
   useEffect(() => { refresh().catch((error) => setMessage(error.message)) }, [])
 
+  const mySupplierCategories = useMemo(
+    () => new Set(suppliers.filter((supplier) => supplier.profile_id === currentProfile.id).map((supplier) => supplier.category_id)),
+    [suppliers, currentProfile.id],
+  )
+
   const counts = useMemo(() => ({
     mine: orders.filter((order) => order.requester_profile_id === currentProfile.id && !['collected', 'cancelled'].includes(order.status)).length,
-    claimable: orders.filter((order) => order.status === 'open' && order.requester_profile_id !== currentProfile.id).length,
+    claimable: orders.filter((order) => order.status === 'open' && order.requester_profile_id !== currentProfile.id && mySupplierCategories.has(order.category_id)).length,
     working: orders.filter((order) => ['claimed', 'in_progress'].includes(order.status)).length,
     ready: orders.filter((order) => order.status === 'ready').length,
     active: orders.filter((order) => !['collected', 'cancelled'].includes(order.status)).length,
     history: orders.filter((order) => ['collected', 'cancelled'].includes(order.status)).length,
-  }), [orders, currentProfile.id])
+  }), [orders, currentProfile.id, mySupplierCategories])
 
   const visible = useMemo(() => orders.filter((order) => {
     if (queueView === 'mine') return order.requester_profile_id === currentProfile.id && !['collected', 'cancelled'].includes(order.status)
-    if (queueView === 'claimable') return order.status === 'open' && order.requester_profile_id !== currentProfile.id
+    if (queueView === 'claimable') return order.status === 'open' && order.requester_profile_id !== currentProfile.id && mySupplierCategories.has(order.category_id)
     if (queueView === 'working') return ['claimed', 'in_progress'].includes(order.status)
     if (queueView === 'ready') return order.status === 'ready'
     if (queueView === 'history') return ['collected', 'cancelled'].includes(order.status)
     return !['collected', 'cancelled'].includes(order.status)
-  }), [orders, queueView, currentProfile.id])
+  }), [orders, queueView, currentProfile.id, mySupplierCategories])
 
   const insertOrder = async (orderSummary: string, payload: Record<string, unknown>) => {
     try {
@@ -303,6 +308,7 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
             const total = orderTotal(order)
             const notes = orderNotes(order)
             const canCancel = mine && ['open', 'claimed', 'in_progress'].includes(order.status)
+            const canClaim = order.status === 'open' && !mine && mySupplierCategories.has(order.category_id)
 
             return (
               <article className={'order-ticket status-' + order.status} key={order.id}>
@@ -340,7 +346,7 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
                 {total ? <div className="order-ticket-total"><span>Total</span><strong>{total.toLocaleString()} GP</strong></div> : null}
 
                 <div className="button-row">
-                  {order.status === 'open' && !mine ? <button className="primary-button" onClick={() => transition(order, 'claim')}>Claim order</button> : null}
+                  {canClaim ? <button className="primary-button" onClick={() => transition(order, 'claim')}>Claim order</button> : null}
                   {order.status === 'open' && mine ? <span className="muted">Waiting for another clan member to claim this order.</span> : null}
                   {['claimed', 'in_progress'].includes(order.status) && claimedByMe ? <button className="primary-button" onClick={() => transition(order, 'ready')}>Mark ready</button> : null}
                   {order.status === 'ready' && mine ? <button className="primary-button" onClick={() => transition(order, 'collected')}>Mark collected</button> : null}
