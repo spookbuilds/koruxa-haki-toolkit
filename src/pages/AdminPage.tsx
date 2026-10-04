@@ -1,6 +1,5 @@
-import { ChangeEvent, FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { getOrderCategories, getProfiles, invokeKoruxa } from '../lib/data'
-import { sanitizeSkillExport } from '../lib/catalog'
 import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from '../lib/api'
 import { isOwner, isOfficer } from '../lib/permissions'
 import type { AppRole, OrderCategory, Profile } from '../types'
@@ -126,30 +125,6 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     }
   }
 
-  const importCatalog = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? [])
-    if (!files.length) return
-    try {
-      let total = 0
-      let latestXpTable: number[] = []
-      for (const file of files) {
-        const parsed = JSON.parse(await file.text())
-        const sanitized = sanitizeSkillExport(parsed)
-        const result: any = await apiPost('/api/catalog/import', {
-          actions: sanitized.actions,
-          xp_table: sanitized.xpTable,
-        })
-        total += Number(result.imported ?? sanitized.actions.length)
-        if (sanitized.xpTable.length) latestXpTable = sanitized.xpTable
-      }
-      setMessage('Imported ' + total + ' static Koruxa actions' + (latestXpTable.length ? ' and refreshed the XP table.' : '.'))
-    } catch (error: any) {
-      setMessage(error.message ?? 'Import failed.')
-    } finally {
-      event.target.value = ''
-    }
-  }
-
   const sync = async (action: 'sync-me' | 'sync-clan' | 'sync-all-members') => {
     try {
       setMessage('Syncing…')
@@ -243,10 +218,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
         </div>)}
       </section>
 
-      {isOwner(currentProfile.app_role) ? <section className="panel">
-        <div className="panel-title"><div><h2>Static game catalogue</h2><p className="muted">Upload one or more DevTools skill JSON exports. The importer strips personalised calculation/inventory fields and stores reusable action/recipe data only.</p></div></div>
-        <input type="file" accept=".json,.txt" multiple onChange={importCatalog} />
-      </section> : null}
+
     </div>
   )
 }
