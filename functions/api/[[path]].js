@@ -1764,6 +1764,87 @@ async function handle(context) {
     }
   }
 
+  if (parts[0] === 'order-supplier-offers' && parts[1] && method === 'GET') {
+    const user = await requireUser(context)
+    const categoryId = String(parts[1])
+    const suppliers = await supplierOfferRows(env, categoryId, user.id)
+    return json({
+      category_id: categoryId,
+      can_manage: suppliers.some((supplier) => supplier.profile_id === user.id),
+      suppliers,
+    })
+  }
+
+  if (parts[0] === 'order-supplier-offers' && parts[1] && method === 'PUT') {
+    const user = await requireUser(context)
+    const categoryId = String(parts[1])
+
+    const permission = await env.DB.prepare(
+      'SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id=?'
+    ).bind(user.id, categoryId).first()
+    if (!permission) throw new HttpError(403, 'Only designated shop owners can choose what they are willing to supply')
+
+    const body = await bodyJson(request)
+    const scope = Array.isArray(body.scope) ? body.scope : []
+    const selected = new Set(Array.isArray(body.selected) ? body.selected.map((value) => String(value || '').trim()) : [])
+
+    if (scope.length > 600) throw new HttpError(400, 'Too many supplier options were submitted at once')
+
+    await ensureOrderSupplierOffers(env)
+
+    const cleanScope = []
+    for (const raw of scope) {
+      const key = String(raw?.key || '').trim()
+      const label = String(raw?.label || '').trim().slice(0, 160)
+      if (!key || !label) continue
+
+      const skillKeyRaw = String(raw?.skill_key || '').trim().toLowerCase()
+      const skillKey = skillKeyRaw || null
+      const minLevelRaw = raw?.min_level == null ? null : Number(raw.min_level)
+      const minLevel = Number.isFinite(minLevelRaw) && minLevelRaw >= 1 && minLevelRaw <= 150
+        ? Math.floor(minLevelRaw)
+        : null
+
+      cleanScope.push({ key, label, skill_key: skillKey, min_level: minLevel })
+    }
+
+    const statements = []
+    for (const option of cleanScope) {
+      statements.push(
+        env.DB.prepare(
+          'DELETE FROM order_supplier_offers WHERE user_id=? AND category_id=? AND offer_key=?'
+        ).bind(user.id, categoryId, option.key)
+      )
+    }
+
+    const now = nowIso()
+    for (const option of cleanScope) {
+      if (!selected.has(option.key)) continue
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO order_supplier_offers
+            (user_id,category_id,offer_key,offer_label,skill_key,min_level,updated_at)
+           VALUES (?,?,?,?,?,?,?)
+           ON CONFLICT(user_id,category_id,offer_key)
+           DO UPDATE SET
+             offer_label=excluded.offer_label,
+             skill_key=excluded.skill_key,
+             min_level=excluded.min_level,
+             updated_at=excluded.updated_at`
+        ).bind(user.id, categoryId, option.key, option.label, option.skill_key, option.min_level, now)
+      )
+    }
+
+    for (let i = 0; i < statements.length; i += 75) {
+      await env.DB.batch(statements.slice(i, i + 75))
+    }
+
+    return json({
+      success: true,
+      selected: cleanScope.filter((option) => selected.has(option.key)).length,
+    })
+  }
+
   if (method === 'GET' && joined === 'order-suppliers') {
     const user = await requireUser(context)
     return json({ suppliers: await orderSuppliers(env, user.id) })
@@ -2003,6 +2084,7 @@ async function handle(context) {
       await env.DB.batch([
         env.DB.prepare('DELETE FROM fulfilment_permissions WHERE user_id=? AND category_id=?').bind(userId, categoryId),
         env.DB.prepare('DELETE FROM order_supplier_status WHERE user_id=? AND category_id=?').bind(userId, categoryId),
+        env.DB.prepare('DELETE FROM order_supplier_offers WHERE user_id=? AND category_id=?').bind(userId, categoryId),
       ])
     }
     return json({ success: true })
