@@ -388,6 +388,27 @@ async function ensureCurrentOrderCategories(env) {
   ).run()
 }
 
+async function ensureMemberPreferences(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS member_preferences (
+      user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      timezone TEXT,
+      updated_at TEXT NOT NULL
+    )`
+  ).run()
+}
+
+function validTimeZone(value) {
+  const zone = String(value || '').trim()
+  if (!zone || zone.length > 80) return false
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone }).format(new Date())
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function getClanState(env) {
   const row = await env.DB.prepare('SELECT * FROM clan_state WHERE id=1').first()
   if (!row) return null
@@ -448,10 +469,15 @@ async function verifyClanMembership(env, user, me) {
 }
 
 async function listProfiles(env) {
+  await ensureMemberPreferences(env)
   const { results } = await env.DB.prepare(
-    'SELECT * FROM users WHERE active=1 ORDER BY COALESCE(koruxa_name,display_name,discord_global_name,discord_username)',
+    `SELECT u.*, p.timezone
+       FROM users u
+       LEFT JOIN member_preferences p ON p.user_id=u.id
+      WHERE u.active=1
+      ORDER BY COALESCE(u.koruxa_name,u.display_name,u.discord_global_name,u.discord_username)`,
   ).all()
-  return results.map(profileFromRow)
+  return results.map((row) => ({ ...profileFromRow(row), timezone: row.timezone || null }))
 }
 
 function normalizeBankItem(value) {
@@ -786,6 +812,27 @@ async function handle(context) {
     await requireClanUser(context)
     const state = await getClanState(env)
     return json({ profiles: await listProfiles(env), clan_members: state?.clan_json?.members || [] })
+  }
+
+  if (method === 'PUT' && joined === 'members/timezone') {
+    const user = await requireClanUser(context)
+    await ensureMemberPreferences(env)
+    const body = await bodyJson(request)
+    const timezone = String(body.timezone || '').trim()
+    if (timezone && !validTimeZone(timezone)) throw new HttpError(400, 'Choose a valid IANA timezone, such as Europe/London or America/New_York')
+
+    if (!timezone) {
+      await env.DB.prepare('DELETE FROM member_preferences WHERE user_id=?').bind(user.id).run()
+      return json({ success: true, timezone: null })
+    }
+
+    await env.DB.prepare(
+      `INSERT INTO member_preferences (user_id,timezone,updated_at)
+       VALUES (?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET timezone=excluded.timezone,updated_at=excluded.updated_at`,
+    ).bind(user.id, timezone, nowIso()).run()
+
+    return json({ success: true, timezone })
   }
 
   if (method === 'GET' && joined === 'snapshots/latest') {
