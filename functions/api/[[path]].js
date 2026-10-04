@@ -1423,7 +1423,7 @@ function leaderboardDiscordEmbeds(rows) {
               medals[rowIndex] + ' **' + String(row.koruxa_name) + '** — Lv. ' + Number(row.level).toLocaleString()
             )
             .join('\n') || 'No synced leaders yet',
-          inline: true,
+          inline: false,
         }))
 
       const meta = categoryMeta[category]
