@@ -48,7 +48,8 @@ export function itemEmoji(label: string, skillKey = '') {
   if (value.includes('ore')) return '⛏️'
   if (value.includes('ring')) return '💍'
   if (value.includes('amulet') || value.includes('necklace')) return '📿'
-  if (value.includes('gem') || value.includes('opal') || value.includes('amber') || value.includes('stone') || value.includes('astralite')) return '💎'
+  if (value.includes('uncut ')) return '💠'
+  if (value.startsWith('cut ') || value.includes('gem') || value.includes('opal') || value.includes('amber') || value.includes('stone') || value.includes('astralite')) return '💎'
   if (value.includes('potion') || value.includes('brew') || value.includes('elixir') || value.includes('overload') || skillKey === 'herblore') return '🧪'
   if (value.includes('seed') || value.includes('sapling')) return '🌱'
   if (value.includes('flower') || value.includes('rose') || value.includes('bloom') || value.includes('lily')) return '🌸'
@@ -89,9 +90,26 @@ export function orderGroup(skillKey: string, label: string, category?: string | 
     return 'Other Jewellery'
   }
   if (skillKey === 'crafting') {
-    if (value.includes('hide') || value.includes('leather')) return 'Hide & Leather'
-    if (value.includes('tunic') || value.includes('chaps') || value.includes('hood') || value.includes('boots') || value.includes('gloves')) return 'Armour'
+    if (value.includes('tinderbox')) return 'Tools · Tinderboxes'
+    if (value.includes('pestle')) return 'Tools · Pestles'
+    if (value.includes('lockpick')) return 'Tools · Lockpicks'
     if (value.includes('staff')) return 'Staves'
+
+    // Ranged armour is grouped by equipment type so every progression line stays together.
+    if (value.includes('hood')) return 'Ranged · Hoods'
+    if (value.includes('tunic')) return 'Ranged · Tunics'
+    if (value.includes('chaps')) return 'Ranged · Chaps'
+    if (value.includes('bracers')) return 'Ranged · Bracers'
+    if (value.includes('boots') && !value.includes('shoe')) return 'Ranged · Boots'
+
+    // Magic armour has its own slot-by-slot progression groups.
+    if (value.includes('hat')) return 'Magic · Hats'
+    if (value.includes('robe')) return 'Magic · Robes'
+    if (value.includes('skirt')) return 'Magic · Skirts'
+    if (value.includes('wraps')) return 'Magic · Wraps'
+    if (value.includes('shoes')) return 'Magic · Shoes'
+
+    if (value.includes('hide') || value.includes('leather')) return 'Hide & Leather'
     return 'Other Crafting'
   }
   if (skillKey === 'herblore') {
