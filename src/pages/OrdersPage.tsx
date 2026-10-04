@@ -7,6 +7,7 @@ import CombatOrderForm from '../components/CombatOrderForm'
 import { getOrderCategories, getOrders, invokeKoruxa } from '../lib/data'
 import { apiGet, apiPost, apiPut } from '../lib/api'
 import type { ClanOrder, OrderCategory, Profile } from '../types'
+import orderBoardBanner from '../../assets/images/order-board-banner.png'
 
 type QueueView = 'mine' | 'claimable' | 'working' | 'ready' | 'active' | 'history'
 
@@ -175,14 +176,9 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
 
   return (
     <div className="page orders-page">
-      <header className="exchange-hero">
-        <div className="exchange-hero-glow" />
-        <div>
-          <span className="exchange-kicker">{outsider ? 'STRAWHATS [HAKI] PUBLIC EXCHANGE' : 'STRAWHATS [HAKI] EXCHANGE'}</span>
-          <h1>{outsider ? 'Order Exchange' : 'Clan Order Board'}</h1>
-          <p>{outsider
-            ? 'Place an order with StrawHats. Your account can only see the Orders area and your own requests.'
-            : 'Place polished, easy-to-read orders and keep every request visible from creation to collection.'}</p>
+      <header className="exchange-hero exchange-hero-image">
+        <div className="exchange-hero-art">
+          <img src={orderBoardBanner} alt="HAKI order board" />
         </div>
         <div className="exchange-hero-badge">
           <span>LIVE</span>
