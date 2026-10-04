@@ -3107,3 +3107,49 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     text-align: left;
   }
 }
+
+
+/* ===== CAPABILITY FINDER FILTERS ===== */
+.crafter-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(190px,.55fr) minmax(280px,1.45fr);
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.crafter-filter-bar label {
+  display: grid;
+  gap: 5px;
+}
+
+.crafter-filter-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 2px 0 12px;
+  padding: 8px 10px;
+  color: #9588a1;
+  border: 1px solid #2d2536;
+  border-radius: 10px;
+  background: #141019;
+  font-size: .7rem;
+}
+
+.crafter-filter-summary strong {
+  color: #decf83;
+  font-size: .7rem;
+}
+
+@media (max-width: 820px) {
+  .crafter-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .crafter-filter-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+}
