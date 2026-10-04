@@ -542,6 +542,7 @@ async function orderRows(env) {
 }
 
 async function canFulfil(env, user, categoryId) {
+  if (!user.clan_verified && user.app_role !== 'owner') return false
   if (OFFICER_ROLES.includes(user.app_role)) return true
   const row = await env.DB.prepare(
     'SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id=?',
@@ -836,7 +837,7 @@ async function handle(context) {
   }
 
   if (method === 'GET' && joined === 'catalog') {
-    await requireClanUser(context)
+    await requireUser(context)
     const { results } = await env.DB.prepare('SELECT * FROM skill_actions ORDER BY skill_key,min_level,action_key').all()
     return json({ actions: results.map((row) => ({
       action_key: row.action_key,
@@ -868,7 +869,7 @@ async function handle(context) {
   }
 
   if (method === 'POST' && joined === 'catalog/wiki-sync') {
-    await requireClanUser(context)
+    await requireUser(context)
     const body = await bodyJson(request)
     const skillKey = String(body.skill_key || '').trim().toLowerCase()
     const actions = await syncWikiSkill(env, skillKey)
@@ -956,12 +957,14 @@ async function handle(context) {
   }
 
   if (method === 'GET' && joined === 'orders') {
-    await requireClanUser(context)
-    return json({ orders: await orderRows(env) })
+    const user = await requireUser(context)
+    const rows = await orderRows(env)
+    const outsider = !user.clan_verified && user.app_role !== 'owner'
+    return json({ orders: outsider ? rows.filter((order) => order.requester_profile_id === user.id) : rows })
   }
 
   if (method === 'POST' && joined === 'orders') {
-    const user = await requireClanUser(context)
+    const user = await requireUser(context)
     await ensureCurrentOrderCategories(env)
     const body = await bodyJson(request)
     const categoryId = String(body.category_id || '')
@@ -990,12 +993,13 @@ async function handle(context) {
   }
 
   if (parts[0] === 'orders' && parts[1] && parts[2] && method === 'POST') {
-    const user = await requireClanUser(context)
+    const user = await requireUser(context)
     const order = await env.DB.prepare('SELECT * FROM orders WHERE id=?').bind(parts[1]).first()
     if (!order) throw new HttpError(404, 'Order not found')
     const now = nowIso()
 
     if (parts[2] === 'claim') {
+      if (!user.clan_verified && user.app_role !== 'owner') throw new HttpError(403, 'Outsiders can place orders but cannot fulfil clan orders')
       if (order.status !== 'open') throw new HttpError(409, 'Order is no longer open')
       if (order.requester_user_id === user.id) throw new HttpError(400, 'You cannot claim your own order')
       if (!(await canFulfil(env, user, order.category_id))) throw new HttpError(403, 'You are not approved to fulfil this order category')
@@ -1008,6 +1012,7 @@ async function handle(context) {
     }
 
     if (parts[2] === 'ready') {
+      if (!user.clan_verified && user.app_role !== 'owner') throw new HttpError(403, 'Outsiders cannot fulfil clan orders')
       if (!['claimed','in_progress'].includes(order.status)) throw new HttpError(409, 'Order cannot be marked ready from its current status')
       if (order.claimed_by !== user.id && !OFFICER_ROLES.includes(user.app_role)) throw new HttpError(403, 'Only the assigned fulfiller or an Officer can mark this ready')
       await env.DB.batch([
@@ -1043,7 +1048,7 @@ async function handle(context) {
   }
 
   if (method === 'GET' && joined === 'order-categories') {
-    await requireClanUser(context)
+    await requireUser(context)
     await ensureCurrentOrderCategories(env)
     const { results } = await env.DB.prepare("SELECT * FROM order_categories WHERE enabled=1 AND id<>'other' ORDER BY sort_order,label").all()
     return json({ categories: results.map((row) => ({
@@ -1159,6 +1164,11 @@ async function handle(context) {
     const userId = String(body.user_id || '')
     const categoryId = String(body.category_id || '')
     if (!userId || !categoryId) throw new HttpError(400, 'User and category are required')
+    const targetUser = await env.DB.prepare('SELECT clan_verified,app_role FROM users WHERE id=?').bind(userId).first()
+    if (!targetUser) throw new HttpError(404, 'User not found')
+    if (bool(body.enabled) && !targetUser.clan_verified && targetUser.app_role !== 'owner') {
+      throw new HttpError(400, 'Outsiders cannot be granted fulfilment permissions')
+    }
     if (bool(body.enabled)) {
       await env.DB.prepare(
         `INSERT INTO fulfilment_permissions (user_id,category_id,granted_by,created_at) VALUES (?,?,?,?)
@@ -1176,6 +1186,7 @@ async function handle(context) {
     if (!['owner','officer','member'].includes(role)) throw new HttpError(400, 'Invalid role')
     const target = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(parts[2]).first()
     if (!target) throw new HttpError(404, 'Member not found')
+    if (!target.clan_verified && role !== 'member') throw new HttpError(400, 'Outsiders cannot be promoted until their Koruxa character is verified as a StrawHats member')
     if (target.app_role === 'owner' && role !== 'owner') {
       const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE app_role='owner' AND active=1").first()
       if (Number(count?.count || 0) <= 1) throw new HttpError(400, 'The app must always have at least one Owner')
