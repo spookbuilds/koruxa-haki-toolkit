@@ -25,12 +25,40 @@ function prettyItemKey(value: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
+function displayActionLabel(action: SkillAction, skillKey: string) {
+  const label = action.reward_label
+  if (skillKey !== 'jewelery') return label
+  const lower = label.toLowerCase()
+  if (lower.startsWith('cut ') || lower.includes(' ring') || lower.includes(' amulet') || lower.includes(' mould')) return label
+  if (/(opal|amber|aquastone|garnet|frostgem|voidopal|sunstone|duskgem|stormheart|astralite|emberstone|magmaheart|pyreshard)/i.test(label)) {
+    return 'Cut ' + label.replace(/^uncut\s+/i, '')
+  }
+  return label
+}
+
 function preferredGroups(skillKey: string, groups: string[]) {
   const order: Record<string, string[]> = {
     smithing: ['Bars','Dustite','Copite','Velorite','Crimsrite','Shalore','Noctite','Auorite','Vexite','Zephyne','Korunite','Drakonite','Pyrethium','Infernite','Other Smithing'],
     fletching: ['Arrows','Bows','Crossbows','Other Fletching'],
     jewelery: ['Cut Gems','Rings','Amulets','Other Jewellery'],
-    crafting: ['Hide & Leather','Armour','Staves','Other Crafting'],
+    crafting: [
+      'Tools · Tinderboxes',
+      'Tools · Pestles',
+      'Tools · Lockpicks',
+      'Staves',
+      'Ranged · Hoods',
+      'Ranged · Tunics',
+      'Ranged · Chaps',
+      'Ranged · Bracers',
+      'Ranged · Boots',
+      'Magic · Hats',
+      'Magic · Robes',
+      'Magic · Skirts',
+      'Magic · Wraps',
+      'Magic · Shoes',
+      'Hide & Leather',
+      'Other Crafting',
+    ],
     herblore: ['Potions','Super Potions','Special Potions','Overloads'],
     farming: ['Seeds','Saplings','Crops & Produce','Herbs','Flowers','Fruit'],
   }
@@ -135,21 +163,21 @@ export default function CatalogueOrderForm({
   const submit = async () => {
     if (!basket.length) return
     const lines = basket.map((line) => {
-      const emoji = itemEmoji(line.action.reward_label, skillKey)
+      const emoji = itemEmoji(line.displayActionLabel(action, skillKey), skillKey)
       const mats = line.materials.map((material) => ({
         item: prettyItemKey(material.item),
         item_key: material.item,
         quantity: material.quantity,
       }))
       return {
-        item: line.action.reward_label,
+        item: label,
         item_key: line.action.reward_item_key,
         action_key: line.action.action_key,
         skill_key: skillKey,
         quantity: line.quantity,
         emoji,
         materials: mats,
-        description: emoji + ' ' + line.quantity.toLocaleString() + ' × ' + line.action.reward_label,
+        description: emoji + ' ' + line.quantity.toLocaleString() + ' × ' + label,
       }
     })
     await onSubmit(title + ' order', {
@@ -184,8 +212,8 @@ export default function CatalogueOrderForm({
                 className={selected?.action_key === action.action_key ? 'item-choice active' : 'item-choice'}
                 onClick={() => setSelectedKey(action.action_key)}
               >
-                <span className="item-choice-emoji">{itemEmoji(action.reward_label, skillKey)}</span>
-                <span><strong>{action.reward_label}</strong><small>Lv {action.min_level}</small></span>
+                <span className="item-choice-emoji">{itemEmoji(displayActionLabel(action, skillKey), skillKey)}</span>
+                <span><strong>{displayActionLabel(action, skillKey)}</strong><small>Lv {action.min_level}</small></span>
               </button>
             ))}
           </div>
@@ -195,7 +223,7 @@ export default function CatalogueOrderForm({
       {selected ? <div className="selected-order-builder">
         <div className="selected-item-head">
           <div className="selected-item-icon">{itemEmoji(selected.reward_label, skillKey)}</div>
-          <div><span className="eyebrow">SELECTED ITEM</span><h3>{selected.reward_label}</h3><small>Koruxa {title} Lv {selected.min_level}</small></div>
+          <div><span className="eyebrow">SELECTED ITEM</span><h3>{displayActionLabel(selected, skillKey)}</h3><small>Koruxa {title} Lv {selected.min_level}</small></div>
         </div>
 
         <div className="selected-item-controls">
@@ -206,7 +234,7 @@ export default function CatalogueOrderForm({
         </div>
 
         <div className="materials-box">
-          <div className="materials-title"><span>REQUIRED MATERIALS</span><small>for {Math.max(1, quantity).toLocaleString()} × {selected.reward_label}</small></div>
+          <div className="materials-title"><span>REQUIRED MATERIALS</span><small>for {Math.max(1, quantity).toLocaleString()} × {displayActionLabel(selected, skillKey)}</small></div>
           {selectedMaterials.length ? selectedMaterials.map((material) => (
             <div className="material-chip-line" key={material.item}>
               <span>{itemEmoji(prettyItemKey(material.item))} {prettyItemKey(material.item)}</span>
@@ -221,7 +249,7 @@ export default function CatalogueOrderForm({
         {basket.length ? basket.map((line) => (
           <div className="preview-material" key={line.id}>
             <div className="preview-row">
-              <div><strong>{itemEmoji(line.action.reward_label, skillKey)} {line.quantity.toLocaleString()} × {line.action.reward_label}</strong><small>{line.materials.length ? line.materials.map((material) => material.quantity.toLocaleString() + ' ' + prettyItemKey(material.item)).join(' · ') : 'No listed materials'}</small></div>
+              <div><strong>{itemEmoji(line.displayActionLabel(action, skillKey), skillKey)} {line.quantity.toLocaleString()} × {line.action.reward_label}</strong><small>{line.materials.length ? line.materials.map((material) => material.quantity.toLocaleString() + ' ' + prettyItemKey(material.item)).join(' · ') : 'No listed materials'}</small></div>
               <button type="button" onClick={() => setBasket((current) => current.filter((entry) => entry.id !== line.id))}>Remove</button>
             </div>
           </div>
