@@ -186,6 +186,7 @@ function parseWikiSkillPage(html, skillKey) {
     ...row,
     ingredients: row.ingredients.map((ingredient) => ({
       item_key: ingredient.item_key,
+      label: ingredient.label,
       quantity: ingredient.quantity,
       src_skill: outputToAction.has(ingredient.item_key) ? skillKey : undefined,
       src_action: outputToAction.get(ingredient.item_key),
@@ -829,9 +830,7 @@ async function handle(context) {
     let row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='xp_table'").first()
     let table = parseJson(row?.value_json, [])
     if (!Array.isArray(table) || table.length < 151) {
-      await ensurePlannerData(env)
-      row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='xp_table'").first()
-      table = parseJson(row?.value_json, [])
+      table = await syncXpTableFromWiki(env)
     }
     return json({ xp_table: table })
   }
