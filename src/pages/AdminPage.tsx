@@ -30,7 +30,8 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       [...(clanState.state?.bank_json?.items ?? [])]
         .sort((a: any, b: any) => String(a.name ?? '').localeCompare(String(b.name ?? '')))
     )
-    if (!permissionMember && profileRows[0]) setPermissionMember(profileRows[0].id)
+    const fulfilmentMembers = profileRows.filter((profile) => profile.clan_verified || profile.app_role === 'owner')
+    if (!permissionMember && fulfilmentMembers[0]) setPermissionMember(fulfilmentMembers[0].id)
 
     if (isOfficer(currentProfile.app_role)) {
       const perms = await apiGet<{ permissions: Array<{ profile_id: string; category_id: string }> }>('/api/admin/fulfilment')
@@ -154,8 +155,10 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
           {profiles.map((profile) => <tr key={profile.id}>
             <td>{profile.koruxa_name ?? profile.display_name ?? profile.id}</td>
             <td>{profile.discord_global_name ?? profile.discord_username ?? profile.discord_user_id}</td>
-            <td><span className="pill">{profile.app_role}</span></td>
-            <td><select value={profile.app_role} onChange={(e) => setRole(profile, e.target.value as AppRole)}><option value="member">Member</option><option value="officer">Officer</option><option value="owner">Owner</option></select></td>
+            <td><span className="pill">{profile.access_role === 'outsider' || (!profile.clan_verified && profile.app_role !== 'owner') ? 'Outsider' : profile.app_role}</span></td>
+            <td>{profile.access_role === 'outsider' || (!profile.clan_verified && profile.app_role !== 'owner')
+              ? <span className="muted">Verify as StrawHats member before promotion</span>
+              : <select value={profile.app_role} onChange={(e) => setRole(profile, e.target.value as AppRole)}><option value="member">Member</option><option value="officer">Officer</option><option value="owner">Owner</option></select>}</td>
           </tr>)}
         </tbody></table></div>
       </section> : null}
@@ -171,7 +174,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
 
       <section className="panel">
         <div className="panel-title"><div><h2>Order fulfilment permissions</h2><p className="muted">These are separate from app rank. For example, only selected members can be allowed to fulfil Fish orders.</p></div></div>
-        <label>Member<select value={permissionMember} onChange={(e) => setPermissionMember(e.target.value)}>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.koruxa_name ?? profile.display_name ?? profile.id}</option>)}</select></label>
+        <label>Member<select value={permissionMember} onChange={(e) => setPermissionMember(e.target.value)}>{profiles.filter((profile) => profile.clan_verified || profile.app_role === 'owner').map((profile) => <option key={profile.id} value={profile.id}>{profile.koruxa_name ?? profile.display_name ?? profile.id}</option>)}</select></label>
         <div className="permission-grid">{categories.map((category) => {
           const checked = selectedPermissions.has(category.id)
           return <label className="check-card" key={category.id}><input type="checkbox" checked={checked} onChange={(e) => togglePermission(category.id, e.target.checked)} /><span><strong>{category.label}</strong><small>{category.description}</small></span></label>
