@@ -54,7 +54,7 @@ export default function App() {
     <Shell profile={profile} onSignOut={signOut}>
       <Routes>
         {outsider ? <>
-          <Route path="/orders" element={<OrdersPage currentProfile={profile} />} />
+          <Route path="/orders" element={<OrdersPage currentProfile={profile} onProfileChanged={loadProfile} />} />
           <Route path="*" element={<Navigate to="/orders" replace />} />
         </> : <>
           <Route path="/" element={<HomePage />} />
@@ -62,7 +62,7 @@ export default function App() {
           <Route path="/leaderboards" element={<LeaderboardsPage />} />
           <Route path="/planner" element={<PlannerPage currentProfile={profile} />} />
           <Route path="/crafters" element={<CraftersPage />} />
-          <Route path="/orders" element={<OrdersPage currentProfile={profile} />} />
+          <Route path="/orders" element={<OrdersPage currentProfile={profile} onProfileChanged={loadProfile} />} />
           <Route path="/bank" element={<BankPage />} />
           <Route path="/admin" element={<AdminPage currentProfile={profile} onProfileChanged={loadProfile} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
