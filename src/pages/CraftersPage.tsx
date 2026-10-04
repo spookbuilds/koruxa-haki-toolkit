@@ -119,7 +119,6 @@ export default function CraftersPage() {
         </div>
       </section>
 
-      <div className="notice">“Can make” confirms the synced skill-level requirement. Recipes with quest/mastery/coin unlocks are labelled so members know to verify those extra unlocks until Koruxa exposes per-character action unlock state through the token-safe API.</div>
     </div>
   )
 }
