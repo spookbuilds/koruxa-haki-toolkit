@@ -2237,3 +2237,84 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     box-shadow: 0 0 8px rgba(82,189,130,.45);
   }
 }
+
+
+/* ===== OWNER MEMBER API MANAGER ===== */
+.member-api-form {
+  display: grid;
+  grid-template-columns: minmax(220px,.8fr) minmax(300px,1.2fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.member-api-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.member-api-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  gap: 8px;
+  margin-top: 15px;
+}
+.member-api-status-card {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid #30283d;
+  border-radius: 11px;
+  background: #15111c;
+}
+.member-api-status-card > div {
+  min-width: 0;
+}
+.member-api-status-card strong,
+.member-api-status-card span {
+  display: block;
+}
+.member-api-status-card strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .8rem;
+}
+.member-api-status-card > div span {
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #857990;
+  font-size: .68rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 1050px) {
+  .member-api-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .member-api-actions {
+    grid-column: 1 / -1;
+  }
+  .member-api-status-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .member-api-form {
+    grid-template-columns: 1fr;
+  }
+  .member-api-actions {
+    grid-column: auto;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .member-api-actions button {
+    width: 100%;
+  }
+  .member-api-status-grid {
+    grid-template-columns: 1fr;
+  }
+}
