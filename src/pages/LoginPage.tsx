@@ -7,7 +7,7 @@ export default function LoginPage({ setupRequired, error }: { setupRequired?: bo
           <div><strong>HAKI Toolkit</strong><span>StrawHats clan companion</span></div>
         </div>
         <h1>Everything your Koruxa clan needs, in one place.</h1>
-        <p className="muted">Live clan data, skill leaderboards, personalised planning, orders, bank watch and Discord notifications.</p>
+        <p className="muted">StrawHats members get the full clan toolkit. Outside buyers can also sign in to use the public Order Exchange without access to private clan data.</p>
 
         {setupRequired ? (
           <div className="notice danger-note">
@@ -16,7 +16,7 @@ export default function LoginPage({ setupRequired, error }: { setupRequired?: bo
         ) : (
           <div className="stack">
             <a className="primary-button discord-login" href="/api/auth/discord">Sign in with Discord</a>
-            <p className="muted">Discord identifies your HAKI Toolkit account. Your Koruxa character is linked separately using its read-only personal API token.</p>
+            <p className="muted">Discord identifies your HAKI Toolkit account. Clan members can verify their Koruxa character for full clan access; outside buyers can use Orders with Discord alone.</p>
           </div>
         )}
 
