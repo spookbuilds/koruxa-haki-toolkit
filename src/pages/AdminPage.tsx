@@ -15,6 +15,9 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   const [minimum, setMinimum] = useState(0)
   const [preferred, setPreferred] = useState(0)
   const [message, setMessage] = useState('')
+  const [apiMember, setApiMember] = useState('')
+  const [memberApiToken, setMemberApiToken] = useState('')
+  const [apiBusy, setApiBusy] = useState(false)
 
   const refresh = async () => {
     const [profileRows, categoryRows, watchRows, clanState] = await Promise.all([
@@ -32,6 +35,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     )
     const fulfilmentMembers = profileRows.filter((profile) => profile.clan_verified || profile.app_role === 'owner')
     if (!permissionMember && fulfilmentMembers[0]) setPermissionMember(fulfilmentMembers[0].id)
+    if (!apiMember && profileRows[0]) setApiMember(profileRows[0].id)
 
     if (isOfficer(currentProfile.app_role)) {
       const perms = await apiGet<{ permissions: Array<{ profile_id: string; category_id: string }> }>('/api/admin/fulfilment')
@@ -138,6 +142,41 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     }
   }
 
+  const saveMemberApi = async () => {
+    if (!apiMember || !memberApiToken.trim()) return
+    try {
+      setApiBusy(true)
+      setMessage('Validating and encrypting member API token…')
+      const result: any = await apiPost('/api/admin/users/' + apiMember + '/koruxa-token', { token: memberApiToken.trim() })
+      setMemberApiToken('')
+      setMessage('Connected ' + (result.username ?? 'member') + ' successfully. Their token is encrypted and will not be shown again.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not connect member API.')
+    } finally {
+      setApiBusy(false)
+    }
+  }
+
+  const removeMemberApi = async () => {
+    if (!apiMember) return
+    const selected = profiles.find((profile) => profile.id === apiMember)
+    const name = selected?.koruxa_name ?? selected?.display_name ?? 'this member'
+    if (!window.confirm('Remove the saved Koruxa API token for ' + name + '? Historical snapshots will be kept.')) return
+
+    try {
+      setApiBusy(true)
+      await apiDelete('/api/admin/users/' + apiMember + '/koruxa-token')
+      setMemberApiToken('')
+      setMessage('Removed the saved Koruxa API token for ' + name + '.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not remove member API.')
+    } finally {
+      setApiBusy(false)
+    }
+  }
+
   const selectedPermissions = new Set(permissions.filter((row) => row.profile_id === permissionMember).map((row) => row.category_id))
 
   if (!isOfficer(currentProfile.app_role)) {
@@ -161,6 +200,62 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
               : <select value={profile.app_role} onChange={(e) => setRole(profile, e.target.value as AppRole)}><option value="member">Member</option><option value="officer">Officer</option><option value="owner">Owner</option></select>}</td>
           </tr>)}
         </tbody></table></div>
+      </section> : null}
+
+      {isOwner(currentProfile.app_role) ? <section className="panel member-api-admin">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">OWNER ONLY</span>
+            <h2>Member API connections</h2>
+            <p className="muted">If a member has sent you their personal read-only Koruxa API token, you can connect it for them here. The token is validated against the StrawHats roster, encrypted server-side, and never displayed again.</p>
+          </div>
+        </div>
+
+        <div className="member-api-form">
+          <label>Member app account
+            <select value={apiMember} onChange={(e) => { setApiMember(e.target.value); setMemberApiToken('') }}>
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {(profile.koruxa_name ?? profile.display_name ?? profile.discord_global_name ?? profile.discord_username ?? profile.id) +
+                    (profile.koruxa_connected ? ' · API connected' : ' · not connected')}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>Koruxa personal API token
+            <input
+              type="password"
+              value={memberApiToken}
+              onChange={(e) => setMemberApiToken(e.target.value)}
+              placeholder="kxu_…"
+              autoComplete="off"
+            />
+          </label>
+
+          <div className="member-api-actions">
+            <button className="primary-button" type="button" disabled={!apiMember || !memberApiToken.trim() || apiBusy} onClick={saveMemberApi}>
+              {apiBusy ? 'Working…' : profiles.find((profile) => profile.id === apiMember)?.koruxa_connected ? 'Replace API token' : 'Add API token'}
+            </button>
+            {profiles.find((profile) => profile.id === apiMember)?.koruxa_connected
+              ? <button className="ghost-button" type="button" disabled={apiBusy} onClick={removeMemberApi}>Remove saved token</button>
+              : null}
+          </div>
+        </div>
+
+        <div className="member-api-status-grid">
+          {profiles.map((profile) => (
+            <div className="member-api-status-card" key={'api-' + profile.id}>
+              <div>
+                <strong>{profile.koruxa_name ?? profile.display_name ?? profile.discord_global_name ?? profile.discord_username ?? 'App account'}</strong>
+                <span>{profile.discord_global_name ?? profile.discord_username ?? 'Discord linked'}</span>
+              </div>
+              <span className={profile.koruxa_connected ? 'pill success' : 'pill'}>{profile.koruxa_connected ? 'API connected' : 'Needs API'}</span>
+            </div>
+          ))}
+        </div>
+
+        <p className="muted">Members who have not signed into HAKI Toolkit yet do not have an app account to attach a token to. They only need to sign in with Discord once; after that you can add their API here.</p>
       </section> : null}
 
       <section className="panel">
