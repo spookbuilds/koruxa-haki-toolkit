@@ -48,18 +48,25 @@ export default function App() {
   if (loading) return <div className="loading-screen">Loading HAKI Toolkit…</div>
   if (!profile) return <LoginPage setupRequired={setupRequired} error={error} />
 
+  const outsider = profile.access_role === 'outsider' || (!profile.clan_verified && profile.app_role !== 'owner')
+
   return (
     <Shell profile={profile} onSignOut={signOut}>
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/members" element={<MembersPage currentProfile={profile} onProfileChanged={loadProfile} />} />
-        <Route path="/leaderboards" element={<LeaderboardsPage />} />
-        <Route path="/planner" element={<PlannerPage currentProfile={profile} />} />
-        <Route path="/crafters" element={<CraftersPage />} />
-        <Route path="/orders" element={<OrdersPage currentProfile={profile} />} />
-        <Route path="/bank" element={<BankPage />} />
-        <Route path="/admin" element={<AdminPage currentProfile={profile} onProfileChanged={loadProfile} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {outsider ? <>
+          <Route path="/orders" element={<OrdersPage currentProfile={profile} />} />
+          <Route path="*" element={<Navigate to="/orders" replace />} />
+        </> : <>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/members" element={<MembersPage currentProfile={profile} onProfileChanged={loadProfile} />} />
+          <Route path="/leaderboards" element={<LeaderboardsPage />} />
+          <Route path="/planner" element={<PlannerPage currentProfile={profile} />} />
+          <Route path="/crafters" element={<CraftersPage />} />
+          <Route path="/orders" element={<OrdersPage currentProfile={profile} />} />
+          <Route path="/bank" element={<BankPage />} />
+          <Route path="/admin" element={<AdminPage currentProfile={profile} onProfileChanged={loadProfile} />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </>}
       </Routes>
     </Shell>
   )
