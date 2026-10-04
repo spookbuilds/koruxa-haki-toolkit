@@ -307,6 +307,50 @@ async function syncThievingCatalogue(env) {
     '/wiki/skills/thieving/index.html',
   ]
 
+  const nodeLevelFromRow = (rowHtml, cells) => {
+    const raw = String(rowHtml || '')
+    const rowText = htmlCellText(raw)
+
+    const attributeMatch = raw.match(/(?:data-(?:level|required-level)|required[_-]?level)=["']?(\d{1,3})/i)
+    if (attributeMatch) {
+      const level = Number(attributeMatch[1])
+      if (level >= 1 && level <= 150) return level
+    }
+
+    const explicitMatch = rowText.match(/\b(?:Lv|Level|Required(?:\s+Level)?)\s*:?\s*(\d{1,3})\b/i)
+    if (explicitMatch) {
+      const level = Number(explicitMatch[1])
+      if (level >= 1 && level <= 150) return level
+    }
+
+    // Thieving uses a different table layout from artisan skills. Depending on
+    // the wiki render an image/target cell can appear before the level column,
+    // so find a standalone 1–150 value in the metadata cells instead of
+    // assuming cells[0] is always the required level.
+    for (const cell of cells.slice(0, 5)) {
+      const match = String(cell || '').trim().match(/^(?:Lv(?:el)?\s*)?(\d{1,3})$/i)
+      if (!match) continue
+      const level = Number(match[1])
+      if (level >= 1 && level <= 150) return level
+    }
+
+    return null
+  }
+
+  const nodeNameFromRow = (cells, level) => {
+    for (const cell of cells.slice(0, 5)) {
+      const text = String(cell || '').trim()
+      if (!text) continue
+      if (/^(?:Lv(?:el)?\s*)?\d{1,3}$/i.test(text)) continue
+      if (/^(?:target|source|npc|node|loot|item|level|lv|xp|time|chance|success)$/i.test(text)) continue
+      if (/^\d+(?:\.\d+)?%$/.test(text)) continue
+      if (/^\d+(?:\.\d+)?s$/.test(text)) continue
+      if (level != null && text === String(level)) continue
+      return text
+    }
+    return ''
+  }
+
   let bestActions = []
 
   for (const path of paths) {
@@ -323,18 +367,16 @@ async function syncThievingCatalogue(env) {
     for (const rowHtml of rows) {
       const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
         .map((match) => htmlCellText(match[1]))
-        .filter((cell) => cell !== '')
 
-      if (cells.length < 2) continue
+      if (cells.filter(Boolean).length < 2) continue
 
-      const levelMatch = String(cells[0]).match(/\b(\d{1,3})\b/)
-      const level = levelMatch ? Number(levelMatch[1]) : 1
-      const source = String(cells[1] || '').trim()
-      if (!source || /^(target|source|npc|node|loot|item)$/i.test(source)) continue
+      const level = nodeLevelFromRow(rowHtml, cells)
+      const source = nodeNameFromRow(cells, level)
+      if (!source || level == null) continue
 
       // Thieving's wiki table is not shaped like the normal crafting tables.
-      // The reliable part is that loot entries link to their item wiki pages,
-      // so read those links directly instead of assuming fixed column numbers.
+      // Loot entries link directly to item wiki pages, so use those links
+      // rather than assuming fixed loot-column positions.
       const itemLinks = [...rowHtml.matchAll(
         /<a\b[^>]*href=["'](?:https:\/\/koruxa\.com)?\/wiki\/items\/([a-z0-9_-]+)\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
       )]
@@ -348,8 +390,6 @@ async function syncThievingCatalogue(env) {
 
       const candidates = new Map(linkedItems.map((item) => [item.item_key, item.label]))
 
-      // Fallback for any loot rendered as plain text rather than a link.
-      // Use the later cells only; the first cells are level/target metadata.
       if (!candidates.size) {
         for (const cell of cells.slice(2)) {
           for (const item of parseWikiDropLines(cell)) {
@@ -370,7 +410,7 @@ async function syncThievingCatalogue(env) {
           action_key: 'wiki_thieving_' + slugify(source) + '_' + itemKey,
           skill_key: 'thieving',
           label: source,
-          min_level: Number.isFinite(level) ? level : 1,
+          min_level: level,
           duration_ms: 0,
           xp: 0,
           amount: 1,
@@ -392,13 +432,14 @@ async function syncThievingCatalogue(env) {
   if (!bestActions.length) {
     throw new HttpError(
       502,
-      'Could not read the Koruxa Thieving loot table. The wiki layout was found, but no item links could be extracted.'
+      'Could not read the Koruxa Thieving loot table with node levels and item drops.'
     )
   }
 
   await storeOrderActions(env, bestActions)
   return bestActions
 }
+
 
 async function syncWikiSkill(env, skillKey) {
   if (skillKey === 'logs-seeds') return syncLogsSeedsCatalogue(env)
