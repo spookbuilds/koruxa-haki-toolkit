@@ -24,6 +24,7 @@ type Supplier = {
   status: 'available' | 'busy'
   is_self: boolean
   offers: SupplierOffer[]
+  skill_levels?: Record<string, number>
 }
 
 type SupplierResponse = {
@@ -73,8 +74,17 @@ export default function SupplierOfferPanel({
 
   const me = data?.suppliers.find((supplier) => supplier.is_self)
   const currentLevelFor = (option: SupplierOfferOption) => {
-    const offer = me?.offers.find((entry) => entry.key === option.key)
-    return offer?.current_level ?? null
+    if (!option.skillKey) return null
+    const aliases: Record<string,string> = {
+      jewellery: 'jewelery',
+      runecrafting: 'arcana',
+      rune_crafting: 'arcana',
+      runecraft: 'arcana',
+      arcane: 'arcana',
+    }
+    const raw = option.skillKey.toLowerCase()
+    const key = aliases[raw] ?? raw
+    return me?.skill_levels?.[key] ?? null
   }
 
   const filteredOptions = useMemo(() => {
