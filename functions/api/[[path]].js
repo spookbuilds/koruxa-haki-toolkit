@@ -764,6 +764,7 @@ async function handle(context) {
     try {
       discord = await sendOrderDiscord(env, id, 'created')
       if (discord?.skipped) discord_warning = discord.reason
+      if (discord?.warning) discord_warning = discord.warning
     } catch (error) {
       discord_warning = error instanceof Error ? error.message : 'Discord notification failed'
     }
@@ -827,8 +828,12 @@ async function handle(context) {
     await requireClanUser(context)
     const { results } = await env.DB.prepare("SELECT * FROM order_categories WHERE enabled=1 AND id<>'other' ORDER BY sort_order,label").all()
     return json({ categories: results.map((row) => ({
-      id: row.id, label: row.label, description: row.description, discord_channel_id: row.discord_channel_id,
-      enabled: Boolean(row.enabled), sort_order: Number(row.sort_order || 100),
+      id: row.id,
+      label: row.id === 'ore-gems' ? 'Mining · Ore & Uncut Gems' : row.id === 'jewelery' ? 'Jewellery · Cut Gems' : row.label,
+      description: row.description,
+      discord_channel_id: row.discord_channel_id,
+      enabled: Boolean(row.enabled),
+      sort_order: Number(row.sort_order || 100),
     })) })
   }
 
@@ -849,10 +854,17 @@ async function handle(context) {
     const category = await env.DB.prepare('SELECT * FROM order_categories WHERE id=?').bind(parts[1]).first()
     if (!category) throw new HttpError(404, 'Order category not found')
     if (!category.discord_channel_id) throw new HttpError(400, 'Save a Discord channel ID first')
+    const displayLabel = category.id === 'ore-gems' ? 'Mining · Ore & Uncut Gems' : category.id === 'jewelery' ? 'Jewellery · Cut Gems' : category.label
     const result = await sendDiscordMessage(
       env,
       String(category.discord_channel_id),
-      '✅ **HAKI Toolkit connection test**\n' + category.label + ' orders are connected to this channel.',
+      '',
+      [],
+      [{
+        title: '✅ HAKI Toolkit connection test',
+        description: displayLabel + ' orders are connected to this channel. Fancy order cards are enabled.',
+        color: 0x51c878,
+      }],
     )
     return json({ success: true, message_id: result?.id ?? null })
   }
