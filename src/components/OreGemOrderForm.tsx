@@ -20,6 +20,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
   const [basket, setBasket] = useState<Basket>({})
   const [error, setError] = useState('')
   const [supplierOptions, setSupplierOptions] = useState<SupplierOfferOption[]>([])
+  const [supplierSelectedKeys, setSupplierSelectedKeys] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -88,6 +89,10 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
   }, [])
 
   const material = oreGemMaterials.find((entry) => entry.name === materialName) ?? oreGemMaterials[0]
+  const supplierCoverageKey = (entry: typeof oreGemMaterials[number]) =>
+    type === 'gem' && entry.gemName
+      ? supplierKey('gem', entry.gemName)
+      : supplierKey('ore', entry.name)
   const rows = useMemo(() => oreGemMaterials.flatMap((entry) => {
     const state = basket[entry.name]
     if (!state) return []
@@ -181,7 +186,11 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
               <button
                 type="button"
                 key={entry.name}
-                className={materialName === entry.name ? 'item-choice active' : 'item-choice'}
+                className={
+                  'item-choice' +
+                  (materialName === entry.name ? ' active' : '') +
+                  (supplierSelectedKeys && !supplierSelectedKeys.has(supplierCoverageKey(entry)) ? ' no-supplier' : '')
+                }
                 onClick={() => chooseMaterial(entry.name)}
               >
                 <span className="item-choice-emoji">{materialEmoji[entry.name] ?? '⛏️'}</span>
@@ -224,6 +233,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
             ...(row.totalOre ? [supplierKey('ore', row.material.name)] : []),
             ...(row.gems && row.material.gemName ? [supplierKey('gem', row.material.gemName)] : []),
           ])}
+          onCoverageChange={setSupplierSelectedKeys}
         />
 
         <div className="order-preview-board">
