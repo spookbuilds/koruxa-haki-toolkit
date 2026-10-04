@@ -209,7 +209,14 @@ const KORUXA_SKILL_KEYS = new Set([
 
 function canonicalSkillKey(value) {
   const key = String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  return key === 'jewellery' ? 'jewelery' : key
+  const aliases = {
+    jewellery: 'jewelery',
+    runecrafting: 'arcana',
+    rune_crafting: 'arcana',
+    runecraft: 'arcana',
+    arcane: 'arcana',
+  }
+  return aliases[key] || key
 }
 
 export function normalizeSkills(value) {
@@ -334,8 +341,41 @@ export function extractSkillsFromMe(me) {
 
   inspect(me)
 
-  candidates.sort((a, b) => b.length - a.length)
-  return candidates[0] ?? []
+  // Koruxa can expose skill data in more than one block. Do not throw away a
+  // smaller block just because a larger one exists: merge every recognised
+  // skill and keep the most informative/non-zero version of each skill.
+  const merged = new Map()
+
+  for (const candidate of candidates) {
+    for (const entry of candidate) {
+      const key = canonicalSkillKey(entry.skill_key)
+      if (!KORUXA_SKILL_KEYS.has(key)) continue
+
+      const normalized = { ...entry, skill_key: key }
+      const current = merged.get(key)
+
+      if (!current) {
+        merged.set(key, normalized)
+        continue
+      }
+
+      const currentLevel = Number(current.level || 0)
+      const nextLevel = Number(normalized.level || 0)
+      const currentXp = Number(current.xp || 0)
+      const nextXp = Number(normalized.xp || 0)
+
+      if (
+        nextLevel > currentLevel ||
+        (nextLevel === currentLevel && nextXp > currentXp) ||
+        (!currentLevel && nextLevel)
+      ) {
+        merged.set(key, normalized)
+      }
+    }
+  }
+
+  return [...merged.values()]
+    .sort((a, b) => String(a.skill_key).localeCompare(String(b.skill_key)))
 }
 
 export function snapshotFromRow(row) {
