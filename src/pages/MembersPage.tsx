@@ -251,7 +251,8 @@ export default function MembersPage({ currentProfile, onProfileChanged }: { curr
 
       <section className="panel">
         <div className="panel-title"><div><h2>Clan roster</h2><p className="muted">Open a member to see their current local time and account details.</p></div></div>
-        <div className="table-wrap">
+
+        <div className="desktop-member-table table-wrap">
           <table>
             <thead><tr><th>Member</th><th>Koruxa rank</th><th>App role</th><th>Local time</th><th>API</th><th>This week</th><th>Total clan XP</th><th></th></tr></thead>
             <tbody>{displayRows.map((member) => {
@@ -275,6 +276,42 @@ export default function MembersPage({ currentProfile, onProfileChanged }: { curr
               )
             })}</tbody>
           </table>
+        </div>
+
+        <div className="mobile-member-list">
+          {displayRows.map((member) => {
+            const profile = profileByCharacter.get(Number(member.character_id))
+            const time = localTime(profile?.timezone, clockNow)
+            return (
+              <button
+                className="mobile-member-card"
+                type="button"
+                key={'mobile-' + (member.character_id || member.character)}
+                onClick={() => setSelectedMember({ member, profile })}
+              >
+                <div className="mobile-member-main">
+                  <div className="member-avatar-orb">{member.character.slice(0, 1).toUpperCase()}</div>
+                  <div>
+                    <strong>{member.character}</strong>
+                    <span>{member.rank_name || 'StrawHats member'} · {profile?.app_role ?? 'No app account'}</span>
+                  </div>
+                </div>
+                <div className="mobile-member-time">
+                  {time ? <>
+                    <strong>{time.time}</strong>
+                    <span>{time.icon} {time.period}</span>
+                  </> : <>
+                    <strong>—</strong>
+                    <span>Timezone not set</span>
+                  </>}
+                </div>
+                <div className="mobile-member-footer">
+                  <span>{Number(member.xp_this_week ?? 0).toLocaleString()} XP this week</span>
+                  <span className={profile?.koruxa_connected ? 'status-dot connected' : 'status-dot'}>{profile?.koruxa_connected ? 'API linked' : 'Not linked'}</span>
+                </div>
+              </button>
+            )
+          })}
         </div>
       </section>
 
