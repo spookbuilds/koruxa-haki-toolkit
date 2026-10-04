@@ -532,6 +532,11 @@ function orderDiscordTicket(order, payload, lines, event) {
     fletching: '🏹',
     farming: '🌱',
     arcana: '🔮',
+    'logs-seeds': '🪵',
+    thieving: '🗝️',
+    construction: '🪚',
+    tinkering: '⚙️',
+    combat: '⚔️',
   }
   const icon = icons[order.category_id] || '✦'
   const categoryLabel =
@@ -556,6 +561,14 @@ function orderDiscordTicket(order, payload, lines, event) {
     }
     if (line.required_for_gems) {
       extras.push('↳ Matching ore included: ' + formatNumber(line.required_for_gems))
+    }
+    if (Array.isArray(line.source_monsters) && line.source_monsters.length) {
+      extras.push(
+        '↳ Farm from: ' + line.source_monsters.slice(0, 6).map((source) =>
+          String(source.monster || 'Monster') +
+          (source.drop_chance ? ' (' + String(source.drop_chance) + ')' : '')
+        ).join(' • ')
+      )
     }
     return [heading, ...extras].join('\n')
   })
