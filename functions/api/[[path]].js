@@ -307,49 +307,34 @@ async function syncThievingCatalogue(env) {
     '/wiki/skills/thieving/index.html',
   ]
 
-  const nodeLevelFromRow = (rowHtml, cells) => {
-    const raw = String(rowHtml || '')
-    const rowText = htmlCellText(raw)
+  const cellParts = (rowHtml) =>
+    [...String(rowHtml || '').matchAll(/<t([dh])\b[^>]*>([\s\S]*?)<\/t\1>/gi)]
+      .map((match) => ({
+        kind: String(match[1]).toLowerCase(),
+        html: match[2],
+        text: htmlCellText(match[2]),
+      }))
 
-    const attributeMatch = raw.match(/(?:data-(?:level|required-level)|required[_-]?level)=["']?(\d{1,3})/i)
-    if (attributeMatch) {
-      const level = Number(attributeMatch[1])
-      if (level >= 1 && level <= 150) return level
+  const normaliseHeader = (value) =>
+    String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+  const headerIndex = (headers, names) => {
+    for (let i = 0; i < headers.length; i += 1) {
+      const header = normaliseHeader(headers[i])
+      if (names.some((name) => header === name || header.includes(name))) return i
     }
-
-    const explicitMatch = rowText.match(/\b(?:Lv|Level|Required(?:\s+Level)?)\s*:?\s*(\d{1,3})\b/i)
-    if (explicitMatch) {
-      const level = Number(explicitMatch[1])
-      if (level >= 1 && level <= 150) return level
-    }
-
-    // Thieving uses a different table layout from artisan skills. Depending on
-    // the wiki render an image/target cell can appear before the level column,
-    // so find a standalone 1–150 value in the metadata cells instead of
-    // assuming cells[0] is always the required level.
-    for (const cell of cells.slice(0, 5)) {
-      const match = String(cell || '').trim().match(/^(?:Lv(?:el)?\s*)?(\d{1,3})$/i)
-      if (!match) continue
-      const level = Number(match[1])
-      if (level >= 1 && level <= 150) return level
-    }
-
-    return null
+    return -1
   }
 
-  const nodeNameFromRow = (cells, level) => {
-    for (const cell of cells.slice(0, 5)) {
-      const text = String(cell || '').trim()
-      if (!text) continue
-      if (/^(?:Lv(?:el)?\s*)?\d{1,3}$/i.test(text)) continue
-      if (/^(?:target|source|npc|node|loot|item|level|lv|xp|time|chance|success)$/i.test(text)) continue
-      if (/^\d+(?:\.\d+)?%$/.test(text)) continue
-      if (/^\d+(?:\.\d+)?s$/.test(text)) continue
-      if (level != null && text === String(level)) continue
-      return text
-    }
-    return ''
-  }
+  const linkedItemsFromHtml = (html) =>
+    [...String(html || '').matchAll(
+      /<a\b[^>]*href=["'](?:https:\/\/koruxa\.com)?\/wiki\/items\/([a-z0-9_-]+)\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
+    )]
+      .map((match) => ({
+        item_key: slugify(match[1]),
+        label: htmlCellText(match[2]),
+      }))
+      .filter((item) => item.item_key && item.label && !/^view$/i.test(item.label))
 
   let bestActions = []
 
@@ -361,66 +346,83 @@ async function syncThievingCatalogue(env) {
       continue
     }
 
-    const rows = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
     const actions = []
+    const tables = String(html || '').match(/<table\b[^>]*>[\s\S]*?<\/table>/gi) || []
 
-    for (const rowHtml of rows) {
-      const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
-        .map((match) => htmlCellText(match[1]))
+    for (const tableHtml of tables) {
+      const rows = String(tableHtml).match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+      if (rows.length < 2) continue
 
-      if (cells.filter(Boolean).length < 2) continue
+      let headers = []
+      let headerRowIndex = -1
 
-      const level = nodeLevelFromRow(rowHtml, cells)
-      const source = nodeNameFromRow(cells, level)
-      if (!source || level == null) continue
+      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 4); rowIndex += 1) {
+        const parts = cellParts(rows[rowIndex])
+        const texts = parts.map((part) => part.text)
+        const joined = texts.join(' ').toLowerCase()
+        if (
+          parts.some((part) => part.kind === 'h') ||
+          /\b(?:lv|level)\b/.test(joined) && /\b(?:target|action|npc|node|victim|source)\b/.test(joined)
+        ) {
+          headers = texts
+          headerRowIndex = rowIndex
+          break
+        }
+      }
 
-      // Thieving's wiki table is not shaped like the normal crafting tables.
-      // Loot entries link directly to item wiki pages, so use those links
-      // rather than assuming fixed loot-column positions.
-      const itemLinks = [...rowHtml.matchAll(
-        /<a\b[^>]*href=["'](?:https:\/\/koruxa\.com)?\/wiki\/items\/([a-z0-9_-]+)\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
-      )]
+      if (!headers.length) continue
 
-      const linkedItems = itemLinks
-        .map((match) => ({
-          item_key: slugify(match[1]),
-          label: htmlCellText(match[2]),
-        }))
-        .filter((item) => item.item_key && item.label && !/^view$/i.test(item.label))
+      const levelIndex = headerIndex(headers, ['lv','level','required level'])
+      const sourceIndex = headerIndex(headers, ['target','action','npc','node','victim','source'])
+      const lootIndex = headerIndex(headers, ['loot','drops','items','rewards','steals','stolen'])
 
-      const candidates = new Map(linkedItems.map((item) => [item.item_key, item.label]))
+      if (levelIndex < 0 || sourceIndex < 0) continue
 
-      if (!candidates.size) {
-        for (const cell of cells.slice(2)) {
-          for (const item of parseWikiDropLines(cell)) {
+      for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
+        const parts = cellParts(rows[rowIndex])
+        if (parts.length <= Math.max(levelIndex, sourceIndex)) continue
+
+        const levelText = parts[levelIndex]?.text || ''
+        const levelMatch = String(levelText).match(/\b(\d{1,3})\b/)
+        const level = levelMatch ? Number(levelMatch[1]) : NaN
+        const source = String(parts[sourceIndex]?.text || '').trim()
+
+        if (!Number.isFinite(level) || level < 1 || level > 150) continue
+        if (!source || /^(?:target|action|npc|node|victim|source)$/i.test(source)) continue
+
+        const lootHtml = lootIndex >= 0 && parts[lootIndex] ? parts[lootIndex].html : rows[rowIndex]
+        const candidates = new Map(
+          linkedItemsFromHtml(lootHtml).map((item) => [item.item_key, item.label])
+        )
+
+        if (!candidates.size && lootIndex >= 0 && parts[lootIndex]) {
+          for (const item of parseWikiDropLines(parts[lootIndex].text)) {
             const key = slugify(item)
             if (
               key &&
               !/^(always|common|uncommon|rare|epic|legendary|coins?|gold|success|chance|xp|time)$/.test(key) &&
               !/^\d+$/.test(key)
-            ) {
-              candidates.set(key, item)
-            }
+            ) candidates.set(key, item)
           }
         }
-      }
 
-      for (const [itemKey, itemLabel] of candidates) {
-        actions.push({
-          action_key: 'wiki_thieving_' + slugify(source) + '_' + itemKey,
-          skill_key: 'thieving',
-          label: source,
-          min_level: level,
-          duration_ms: 0,
-          xp: 0,
-          amount: 1,
-          reward_item_key: itemKey,
-          reward_label: itemLabel,
-          image: null,
-          is_recipe: false,
-          category: source,
-          ingredients: [],
-        })
+        for (const [itemKey, itemLabel] of candidates) {
+          actions.push({
+            action_key: 'wiki_thieving_' + slugify(source) + '_' + itemKey,
+            skill_key: 'thieving',
+            label: source,
+            min_level: level,
+            duration_ms: 0,
+            xp: 0,
+            amount: 1,
+            reward_item_key: itemKey,
+            reward_label: itemLabel,
+            image: null,
+            is_recipe: false,
+            category: source,
+            ingredients: [],
+          })
+        }
       }
     }
 
@@ -432,10 +434,13 @@ async function syncThievingCatalogue(env) {
   if (!bestActions.length) {
     throw new HttpError(
       502,
-      'Could not read the Koruxa Thieving loot table with node levels and item drops.'
+      'Could not read the Koruxa Thieving node table with its real level requirements.'
     )
   }
 
+  // Remove stale rows from earlier broken imports so a cached Lv1/source=1
+  // record cannot survive beside the corrected catalogue.
+  await env.DB.prepare("DELETE FROM skill_actions WHERE skill_key='thieving'").run()
   await storeOrderActions(env, bestActions)
   return bestActions
 }
