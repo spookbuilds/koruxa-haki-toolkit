@@ -297,6 +297,7 @@ export async function sendOrderDiscord(env, orderId, event) {
     herblore: '🧪',
     fletching: '🏹',
     farming: '🌱',
+    arcana: '🔮',
   }
   const colors = {
     'ore-gems': 0x35a7ff,
@@ -307,6 +308,7 @@ export async function sendOrderDiscord(env, orderId, event) {
     herblore: 0x72cf72,
     fletching: 0x62bc8d,
     farming: 0x79c85d,
+    arcana: 0x7d5cff,
   }
   const icon = icons[order.category_id] || '✦'
   const color = colors[order.category_id] || 0x8d6abe
