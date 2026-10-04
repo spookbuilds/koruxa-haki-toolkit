@@ -134,8 +134,18 @@ export default function CatalogueOrderForm({
         !excludeLabels.some((label) => action.reward_label.toLowerCase() === label.toLowerCase())
       )
 
-      if (!skillActions.length) {
-        setMessage('Loading the official Koruxa ' + title.toLowerCase() + ' catalogue…')
+      const brokenThievingCache =
+        skillKey === 'thieving' &&
+        skillActions.length > 10 &&
+        skillActions.every((action) => Number(action.min_level || 1) === 1) &&
+        new Set(skillActions.map((action) => String(action.category || '').trim())).size <= 2
+
+      if (!skillActions.length || brokenThievingCache) {
+        setMessage(
+          brokenThievingCache
+            ? 'Refreshing the corrected Koruxa Thieving node catalogue…'
+            : 'Loading the official Koruxa ' + title.toLowerCase() + ' catalogue…'
+        )
         await apiPost('/api/catalog/wiki-sync', { skill_key: skillKey })
         actions = await getSkillActions()
         skillActions = actions.filter((action) =>
