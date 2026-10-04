@@ -28,11 +28,19 @@ function prettyItemKey(value: string) {
 function displayActionLabel(action: SkillAction, skillKey: string) {
   const label = action.reward_label
   if (skillKey !== 'jewelery') return label
+
   const lower = label.toLowerCase()
-  if (lower.startsWith('cut ') || lower.includes(' ring') || lower.includes(' amulet') || lower.includes(' mould')) return label
+  if (
+    lower.startsWith('cut ') ||
+    lower.includes(' ring') ||
+    lower.includes(' amulet') ||
+    lower.includes(' mould')
+  ) return label
+
   if (/(opal|amber|aquastone|garnet|frostgem|voidopal|sunstone|duskgem|stormheart|astralite|emberstone|magmaheart|pyreshard)/i.test(label)) {
     return 'Cut ' + label.replace(/^uncut\s+/i, '')
   }
+
   return label
 }
 
@@ -62,6 +70,7 @@ function preferredGroups(skillKey: string, groups: string[]) {
     herblore: ['Potions','Super Potions','Special Potions','Overloads'],
     farming: ['Seeds','Saplings','Crops & Produce','Herbs','Flowers','Fruit'],
   }
+
   const ranking = order[skillKey] ?? []
   return [...groups].sort((a, b) => {
     const ai = ranking.indexOf(a)
@@ -103,6 +112,7 @@ export default function CatalogueOrderForm({
         action.reward_label &&
         !excludeLabels.some((label) => action.reward_label.toLowerCase() === label.toLowerCase())
       )
+
       if (!skillActions.length) {
         setMessage('Loading the official Koruxa ' + title.toLowerCase() + ' catalogue…')
         await apiPost('/api/catalog/wiki-sync', { skill_key: skillKey })
@@ -113,6 +123,7 @@ export default function CatalogueOrderForm({
           !excludeLabels.some((label) => action.reward_label.toLowerCase() === label.toLowerCase())
         )
       }
+
       setCatalog(skillActions)
       if (skillActions[0]) setSelectedKey((current) => current || skillActions[0].action_key)
       setMessage(skillActions.length ? '' : 'No orderable items were found for this skill yet.')
@@ -126,23 +137,30 @@ export default function CatalogueOrderForm({
   useEffect(() => { load() }, [skillKey])
 
   const selected = catalog.find((action) => action.action_key === selectedKey) ?? catalog[0]
+
   const groups = useMemo(() => {
     const map = new Map<string, SkillAction[]>()
+
     for (const action of catalog) {
       const group = orderGroup(skillKey, action.reward_label, action.category)
       if (!map.has(group)) map.set(group, [])
       map.get(group)!.push(action)
     }
-    for (const actions of map.values()) actions.sort((a, b) => a.min_level - b.min_level || a.reward_label.localeCompare(b.reward_label))
+
+    for (const actions of map.values()) {
+      actions.sort((a, b) => a.min_level - b.min_level || displayActionLabel(a, skillKey).localeCompare(displayActionLabel(b, skillKey)))
+    }
+
     return map
   }, [catalog, skillKey])
-  const groupNames = preferredGroups(skillKey, [...groups.keys()])
 
+  const groupNames = preferredGroups(skillKey, [...groups.keys()])
   const selectedMaterials = selected ? materialLines(selected, Math.max(1, quantity)) : []
 
   const add = () => {
     if (!selected) return
     const qty = Math.max(1, Math.floor(quantity))
+
     setBasket((current) => {
       const existing = current.find((line) => line.action.action_key === selected.action_key)
       if (existing) {
@@ -151,6 +169,7 @@ export default function CatalogueOrderForm({
           ? { ...line, quantity: nextQty, materials: materialLines(selected, nextQty) }
           : line)
       }
+
       return [...current, {
         id: crypto.randomUUID(),
         action: selected,
@@ -162,13 +181,16 @@ export default function CatalogueOrderForm({
 
   const submit = async () => {
     if (!basket.length) return
+
     const lines = basket.map((line) => {
-      const emoji = itemEmoji(line.displayActionLabel(action, skillKey), skillKey)
+      const label = displayActionLabel(line.action, skillKey)
+      const emoji = itemEmoji(label, skillKey)
       const mats = line.materials.map((material) => ({
         item: prettyItemKey(material.item),
         item_key: material.item,
         quantity: material.quantity,
       }))
+
       return {
         item: label,
         item_key: line.action.reward_item_key,
@@ -180,12 +202,14 @@ export default function CatalogueOrderForm({
         description: emoji + ' ' + line.quantity.toLocaleString() + ' × ' + label,
       }
     })
+
     await onSubmit(title + ' order', {
       form: 'catalogue',
       skill_key: skillKey,
       lines,
       notes: notes.trim(),
     })
+
     setBasket([])
     setNotes('')
   }
@@ -203,27 +227,41 @@ export default function CatalogueOrderForm({
 
       {!loading && groupNames.map((group) => (
         <section className="item-button-group" key={group}>
-          <div className="item-button-group-title"><span>{group}</span><small>{groups.get(group)?.length ?? 0} items</small></div>
+          <div className="item-button-group-title">
+            <span>{group}</span>
+            <small>{groups.get(group)?.length ?? 0} items</small>
+          </div>
+
           <div className="item-button-grid">
-            {(groups.get(group) ?? []).map((action) => (
-              <button
-                type="button"
-                key={action.action_key}
-                className={selected?.action_key === action.action_key ? 'item-choice active' : 'item-choice'}
-                onClick={() => setSelectedKey(action.action_key)}
-              >
-                <span className="item-choice-emoji">{itemEmoji(displayActionLabel(action, skillKey), skillKey)}</span>
-                <span><strong>{displayActionLabel(action, skillKey)}</strong><small>Lv {action.min_level}</small></span>
-              </button>
-            ))}
+            {(groups.get(group) ?? []).map((action) => {
+              const label = displayActionLabel(action, skillKey)
+              return (
+                <button
+                  type="button"
+                  key={action.action_key}
+                  className={selected?.action_key === action.action_key ? 'item-choice active' : 'item-choice'}
+                  onClick={() => setSelectedKey(action.action_key)}
+                >
+                  <span className="item-choice-emoji">{itemEmoji(label, skillKey)}</span>
+                  <span>
+                    <strong>{label}</strong>
+                    <small>Lv {action.min_level}</small>
+                  </span>
+                </button>
+              )
+            })}
           </div>
         </section>
       ))}
 
       {selected ? <div className="selected-order-builder">
         <div className="selected-item-head">
-          <div className="selected-item-icon">{itemEmoji(selected.reward_label, skillKey)}</div>
-          <div><span className="eyebrow">SELECTED ITEM</span><h3>{displayActionLabel(selected, skillKey)}</h3><small>Koruxa {title} Lv {selected.min_level}</small></div>
+          <div className="selected-item-icon">{itemEmoji(displayActionLabel(selected, skillKey), skillKey)}</div>
+          <div>
+            <span className="eyebrow">SELECTED ITEM</span>
+            <h3>{displayActionLabel(selected, skillKey)}</h3>
+            <small>Koruxa {title} Lv {selected.min_level}</small>
+          </div>
         </div>
 
         <div className="selected-item-controls">
@@ -234,7 +272,10 @@ export default function CatalogueOrderForm({
         </div>
 
         <div className="materials-box">
-          <div className="materials-title"><span>REQUIRED MATERIALS</span><small>for {Math.max(1, quantity).toLocaleString()} × {displayActionLabel(selected, skillKey)}</small></div>
+          <div className="materials-title">
+            <span>REQUIRED MATERIALS</span>
+            <small>for {Math.max(1, quantity).toLocaleString()} × {displayActionLabel(selected, skillKey)}</small>
+          </div>
           {selectedMaterials.length ? selectedMaterials.map((material) => (
             <div className="material-chip-line" key={material.item}>
               <span>{itemEmoji(prettyItemKey(material.item))} {prettyItemKey(material.item)}</span>
@@ -246,20 +287,32 @@ export default function CatalogueOrderForm({
 
       <div className="order-preview-board">
         <div className="order-preview-title"><span>YOUR ORDER</span><strong>{basket.length} selected</strong></div>
-        {basket.length ? basket.map((line) => (
-          <div className="preview-material" key={line.id}>
-            <div className="preview-row">
-              <div><strong>{itemEmoji(line.displayActionLabel(action, skillKey), skillKey)} {line.quantity.toLocaleString()} × {line.action.reward_label}</strong><small>{line.materials.length ? line.materials.map((material) => material.quantity.toLocaleString() + ' ' + prettyItemKey(material.item)).join(' · ') : 'No listed materials'}</small></div>
-              <button type="button" onClick={() => setBasket((current) => current.filter((entry) => entry.id !== line.id))}>Remove</button>
+        {basket.length ? basket.map((line) => {
+          const label = displayActionLabel(line.action, skillKey)
+          return (
+            <div className="preview-material" key={line.id}>
+              <div className="preview-row">
+                <div>
+                  <strong>{itemEmoji(label, skillKey)} {line.quantity.toLocaleString()} × {label}</strong>
+                  <small>{line.materials.length
+                    ? line.materials.map((material) => material.quantity.toLocaleString() + ' ' + prettyItemKey(material.item)).join(' · ')
+                    : 'No listed materials'}
+                  </small>
+                </div>
+                <button type="button" onClick={() => setBasket((current) => current.filter((entry) => entry.id !== line.id))}>Remove</button>
+              </div>
             </div>
-          </div>
-        )) : <p className="empty">Choose items above to build the request.</p>}
+          )
+        }) : <p className="empty">Choose items above to build the request.</p>}
       </div>
 
       <label>Order notes
         <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} maxLength={500} placeholder="Optional notes for the crafter…" />
       </label>
-      <button type="button" className="exchange-submit" disabled={!basket.length} onClick={submit}>Submit {title.toLowerCase()} order</button>
+
+      <button type="button" className="exchange-submit" disabled={!basket.length} onClick={submit}>
+        Submit {title.toLowerCase()} order
+      </button>
     </div>
   )
 }
