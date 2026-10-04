@@ -3205,3 +3205,19 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
   background: #55c986;
   box-shadow: 0 0 7px rgba(85,201,134,.42);
 }
+
+
+/* ===== EMPTY ORDER PREVIEW SPACING ===== */
+.order-preview-board > .empty {
+  margin: 0;
+  padding: 13px 14px 14px;
+  line-height: 1.4;
+  color: #8f829c;
+}
+
+@media (max-width: 820px) {
+  .order-preview-board > .empty {
+    padding: 11px 12px 12px;
+    font-size: .74rem;
+  }
+}
