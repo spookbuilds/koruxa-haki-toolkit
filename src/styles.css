@@ -3496,3 +3496,46 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     transform: none;
   }
 }
+
+
+/* ===== DISCORD LEADERBOARD PUBLISHER ===== */
+.leaderboard-discord-panel {
+  display: grid;
+  gap: 10px;
+  border-color: #3a4f68;
+  background:
+    radial-gradient(circle at top right,rgba(69,134,192,.12),transparent 34%),
+    rgba(20,17,29,.9);
+}
+
+.leaderboard-discord-controls {
+  display: grid;
+  grid-template-columns: minmax(260px,1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.leaderboard-discord-controls .button-row {
+  margin: 0;
+  flex-wrap: nowrap;
+}
+
+.leaderboard-discord-note {
+  margin: 0;
+}
+
+@media (max-width: 820px) {
+  .leaderboard-discord-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .leaderboard-discord-controls .button-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .leaderboard-discord-controls .button-row button {
+    width: 100%;
+  }
+}
