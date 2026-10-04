@@ -3,6 +3,7 @@ import FishOrderForm from '../components/FishOrderForm'
 import OreGemOrderForm from '../components/OreGemOrderForm'
 import CatalogueOrderForm from '../components/CatalogueOrderForm'
 import PotionOrderForm from '../components/PotionOrderForm'
+import CombatOrderForm from '../components/CombatOrderForm'
 import { getOrderCategories, getOrders, invokeKoruxa } from '../lib/data'
 import { apiGet, apiPost, apiPut } from '../lib/api'
 import type { ClanOrder, OrderCategory, Profile } from '../types'
@@ -36,6 +37,28 @@ function orderTotal(order: ClanOrder) {
 function orderNotes(order: ClanOrder) {
   return String(order.payload?.notes ?? '').trim()
 }
+
+const cookedFishLabels = [
+  'Cooked Mudfish',
+  'Cooked Silverscale',
+  'Cooked Riverfin',
+  'Cooked Crimson Carp',
+  'Cooked Goldstream',
+  'Cooked Thunderfin',
+  'Cooked Stoneback',
+  'Cooked Ironjaw',
+  'Cooked Frostgill',
+  'Cooked Shadowfin',
+  'Cooked Abyssal Eel',
+  'Cooked Emberfin',
+  'Cooked Tidecrusher',
+  'Cooked Voidtooth',
+  'Cooked Leviathan',
+  'Cooked Lavafin',
+  'Cooked Magmajaw',
+  'Cooked Pyrescale',
+  'Burnt Fish',
+]
 
 export default function OrdersPage({ currentProfile, onProfileChanged }: { currentProfile: Profile; onProfileChanged?: () => Promise<void> | void }) {
   const outsider = currentProfile.access_role === 'outsider' || (!currentProfile.clan_verified && currentProfile.app_role !== 'owner')
@@ -211,8 +234,24 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
                 fletching: '🏹',
                 farming: '🌱',
                 arcana: '🔮',
+                'logs-seeds': '🪵',
+                thieving: '🗝️',
+                construction: '🪚',
+                tinkering: '⚙️',
+                combat: '⚔️',
               } as Record<string,string>)[category.id] ?? '✦'}</span>
-              <span><strong>{categoryDisplayLabel(category)}</strong><small>{category.id === 'ore-gems' ? 'Ore & gem market' : category.id === 'fish' ? 'Fresh catch market' : category.id === 'herblore' ? 'Potions & Overloads' : category.id === 'arcana' ? 'Rune orders' : 'Full Koruxa catalogue'}</small></span>
+              <span><strong>{categoryDisplayLabel(category)}</strong><small>{
+                category.id === 'ore-gems' ? 'Ore & gem market' :
+                category.id === 'fish' ? 'Fish & cooked food' :
+                category.id === 'herblore' ? 'Potions & Overloads' :
+                category.id === 'arcana' ? 'Rune orders' :
+                category.id === 'logs-seeds' ? 'Logs & seed supplies' :
+                category.id === 'thieving' ? 'Thieving loot' :
+                category.id === 'construction' ? 'Construction crafts' :
+                category.id === 'tinkering' ? 'Tinkering crafts' :
+                category.id === 'combat' ? 'Supplier-selected drops' :
+                'Full Koruxa catalogue'
+              }</small></span>
             </button>
           ))}
         </div>
@@ -262,15 +301,29 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
         </section>
 
         <div className={'exchange-board exchange-board-' + (activeCategory || 'generic')}>
-          {activeCategory === 'fish' ? <FishOrderForm onSubmit={insertOrder} /> :
+          {activeCategory === 'fish' ? <div className="stack">
+              <FishOrderForm onSubmit={insertOrder} />
+              <CatalogueOrderForm
+                skillKey="cooking"
+                title="Cooking · Non-Fish Food"
+                subtitle="Bread, popcorn, fruit dishes, pies, preserves and the other non-fish Cooking recipes."
+                excludeLabels={cookedFishLabels}
+                onSubmit={insertOrder}
+              />
+            </div> :
             activeCategory === 'ore-gems' ? <OreGemOrderForm onSubmit={insertOrder} /> :
             activeCategory === 'herblore' ? <PotionOrderForm onSubmit={insertOrder} /> :
             activeCategory === 'smithing' ? <CatalogueOrderForm skillKey="smithing" title="Smithing" onSubmit={insertOrder} /> :
             activeCategory === 'crafting' ? <CatalogueOrderForm skillKey="crafting" title="Crafting" onSubmit={insertOrder} /> :
             activeCategory === 'fletching' ? <CatalogueOrderForm skillKey="fletching" title="Fletching" onSubmit={insertOrder} /> :
             activeCategory === 'jewelery' ? <CatalogueOrderForm skillKey="jewelery" title="Jewellery" subtitle="CUT gems only — jewellery uses the cut versions of gems, never the uncut Mining drops." onSubmit={insertOrder} /> :
+            activeCategory === 'logs-seeds' ? <CatalogueOrderForm skillKey="logs-seeds" title="Logs & Seeds" subtitle="Woodcutting logs plus seeds sourced from the official Koruxa Woodcutting drop tables." onSubmit={insertOrder} /> :
             activeCategory === 'farming' ? <CatalogueOrderForm skillKey="farming" title="Farming" onSubmit={insertOrder} /> :
             activeCategory === 'arcana' ? <CatalogueOrderForm skillKey="arcana" title="Arcana · Runes" subtitle="Order crafted runes directly from the Arcana catalogue." onSubmit={insertOrder} /> :
+            activeCategory === 'thieving' ? <CatalogueOrderForm skillKey="thieving" title="Thieving Supplies" subtitle="Loot is grouped by the Thieving node it can be obtained from." onSubmit={insertOrder} /> :
+            activeCategory === 'construction' ? <CatalogueOrderForm skillKey="construction" title="Construction" onSubmit={insertOrder} /> :
+            activeCategory === 'tinkering' ? <CatalogueOrderForm skillKey="tinkering" title="Tinkering" onSubmit={insertOrder} /> :
+            activeCategory === 'combat' ? <CombatOrderForm onSubmit={insertOrder} /> :
             <div className="order-board-main"><div className="notice">This order board is not configured.</div></div>}
         </div>
         {message ? <p className="notice">{message}</p> : null}
