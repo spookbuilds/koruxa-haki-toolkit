@@ -134,11 +134,16 @@ export default function CatalogueOrderForm({
         !excludeLabels.some((label) => action.reward_label.toLowerCase() === label.toLowerCase())
       )
 
+      const thievingCategories = skillActions.map((action) => String(action.category || '').trim()).filter(Boolean)
       const brokenThievingCache =
         skillKey === 'thieving' &&
         skillActions.length > 10 &&
-        skillActions.every((action) => Number(action.min_level || 1) === 1) &&
-        new Set(skillActions.map((action) => String(action.category || '').trim())).size <= 2
+        (
+          skillActions.every((action) => Number(action.min_level || 1) === 1) ||
+          thievingCategories.some((category) =>
+            /^(?:qty|\d+\s*[–-]\s*\d+|\d+)$/.test(category.toLowerCase())
+          )
+        )
 
       if (!skillActions.length || brokenThievingCache) {
         setMessage(
