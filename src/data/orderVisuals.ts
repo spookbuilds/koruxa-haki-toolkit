@@ -131,7 +131,11 @@ export function orderGroup(skillKey: string, label: string, category?: string | 
     return 'Other Crafting'
   }
   if (skillKey === 'herblore') {
-    if (value.includes('overload')) return 'Overloads'
+    if (
+      value.includes('overload') ||
+      value.includes('drakeflower brew') ||
+      value.includes('cinderfury elixir')
+    ) return 'Overloads'
     if (value.includes('super ')) return 'Super Potions'
     if (value.includes('brew') || value.includes('elixir') || value.includes('draught') || value.includes('scent')) return 'Special Potions'
     return 'Potions'
