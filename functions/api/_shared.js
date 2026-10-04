@@ -310,6 +310,10 @@ export async function sendOrderDiscord(env, orderId, event) {
   }
   const icon = icons[order.category_id] || '✦'
   const color = colors[order.category_id] || 0x8d6abe
+  const categoryLabel =
+    order.category_id === 'ore-gems' ? 'Mining · Ore & Uncut Gems' :
+    order.category_id === 'jewelery' ? 'Jewellery · Cut Gems' :
+    categoryLabel
 
   const detailLines = lines.map((line) => {
     const emoji = String(line.emoji || '')
@@ -362,7 +366,7 @@ export async function sendOrderDiscord(env, orderId, event) {
     if (notes) fields.push({ name: 'Notes', value: notes.slice(0, 1024), inline: false })
 
     embeds = [{
-      title: icon + ' New ' + order.category_label + ' Order',
+      title: icon + ' New ' + categoryLabel + ' Order',
       description: (detailLines.join('\n\n') || String(order.summary || '')).slice(0, 4000),
       color,
       fields,
@@ -373,7 +377,7 @@ export async function sendOrderDiscord(env, orderId, event) {
   if (event === 'claimed') {
     embeds = [{
       title: '🛠️ Order Claimed',
-      description: '**' + String(order.fulfiller_name || 'A clan member') + '** is now working on **' + String(order.requester_name) + "'s** " + String(order.category_label) + ' order.',
+      description: '**' + String(order.fulfiller_name || 'A clan member') + '** is now working on **' + String(order.requester_name) + "'s** " + String(categoryLabel) + ' order.',
       color: 0xe0a43a,
       timestamp: new Date().toISOString(),
     }]
@@ -386,7 +390,7 @@ export async function sendOrderDiscord(env, orderId, event) {
     }
     embeds = [{
       title: '✅ Your Order Is Ready!',
-      description: String(order.summary || order.category_label + ' order') + '\nCompleted by **' + String(order.fulfiller_name || 'a clan member') + '**.',
+      description: String(order.summary || categoryLabel + ' order') + '\nCompleted by **' + String(order.fulfiller_name || 'a clan member') + '**.',
       color: 0x51c878,
       timestamp: new Date().toISOString(),
     }]
@@ -395,7 +399,7 @@ export async function sendOrderDiscord(env, orderId, event) {
   if (event === 'collected') {
     embeds = [{
       title: '📦 Order Collected',
-      description: '**' + String(order.requester_name) + '** collected their ' + String(order.category_label) + ' order.',
+      description: '**' + String(order.requester_name) + '** collected their ' + String(categoryLabel) + ' order.',
       color: 0x657287,
       timestamp: new Date().toISOString(),
     }]
@@ -404,7 +408,7 @@ export async function sendOrderDiscord(env, orderId, event) {
   if (event === 'cancelled') {
     embeds = [{
       title: '❌ Order Cancelled',
-      description: '**' + String(order.requester_name) + '** cancelled their ' + String(order.category_label) + ' order.',
+      description: '**' + String(order.requester_name) + '** cancelled their ' + String(categoryLabel) + ' order.',
       color: 0xb34658,
       timestamp: new Date().toISOString(),
     }]
@@ -413,7 +417,12 @@ export async function sendOrderDiscord(env, orderId, event) {
   if (!embeds.length) return { skipped: true, reason: 'Unsupported Discord event' }
 
   const result = await sendDiscordMessage(env, String(order.discord_channel_id), content, allowedUsers, embeds)
-  return { success: true, channel_id: String(order.discord_channel_id), message_id: result.id ?? null }
+  return {
+    success: true,
+    channel_id: String(order.discord_channel_id),
+    message_id: result.id ?? null,
+    warning: result.warning ?? null,
+  }
 }
 
 export async function sendDiscordMessage(env, channelId, content, allowedUsers = [], embeds = []) {
@@ -423,30 +432,76 @@ export async function sendDiscordMessage(env, channelId, content, allowedUsers =
     throw new HttpError(400, 'Discord channel ID must be the numeric channel ID copied from Discord')
   }
 
-  const response = await fetch('https://discord.com/api/v10/channels/' + cleanChannelId + '/messages', {
+  const url = 'https://discord.com/api/v10/channels/' + cleanChannelId + '/messages'
+  const headers = {
+    Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN,
+    'Content-Type': 'application/json',
+  }
+
+  const payload = {
+    ...(content ? { content } : {}),
+    ...(embeds?.length ? { embeds } : {}),
+    allowed_mentions: allowedUsers.length ? { users: allowedUsers } : { parse: [] },
+  }
+
+  let response = await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: 'Bot ' + env.DISCORD_BOT_TOKEN,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      ...(content ? { content } : {}),
-      ...(embeds?.length ? { embeds } : {}),
-      allowed_mentions: allowedUsers.length ? { users: allowedUsers } : { parse: [] },
-    }),
+    headers,
+    body: JSON.stringify(payload),
   })
 
-  const responseText = await response.text()
+  let responseText = await response.text()
   let responseBody = null
   try { responseBody = responseText ? JSON.parse(responseText) : null } catch { responseBody = responseText || null }
+
+  // Embeds require Discord's "Embed Links" permission. If that permission is the
+  // only thing missing, deliver a readable plain-text fallback instead of losing
+  // the clan notification, and surface a precise warning in the app.
+  if (!response.ok && response.status === 403 && embeds?.length) {
+    const fallbackText = [
+      content,
+      ...embeds.flatMap((embed) => [
+        embed.title ? '**' + embed.title + '**' : '',
+        embed.description || '',
+        ...(Array.isArray(embed.fields)
+          ? embed.fields.map((field) => '**' + field.name + '**\n' + field.value)
+          : []),
+      ]),
+    ].filter(Boolean).join('\n\n').slice(0, 1900)
+
+    const fallback = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        content: fallbackText || 'HAKI Toolkit order notification',
+        allowed_mentions: allowedUsers.length ? { users: allowedUsers } : { parse: [] },
+      }),
+    })
+
+    const fallbackTextBody = await fallback.text()
+    let fallbackBody = null
+    try { fallbackBody = fallbackTextBody ? JSON.parse(fallbackTextBody) : null } catch { fallbackBody = fallbackTextBody || null }
+
+    if (fallback.ok) {
+      return {
+        ...(fallbackBody || {}),
+        warning: 'Discord delivered a plain fallback because the HAKI Toolkit bot is missing the Embed Links permission in this channel.',
+      }
+    }
+  }
 
   if (!response.ok) {
     const discordMessage = typeof responseBody === 'object' && responseBody
       ? String(responseBody.message || responseBody.error || '')
       : String(responseBody || '')
+
+    const hint = response.status === 403 && embeds?.length
+      ? ' The bot needs View Channel, Send Messages and Embed Links in this channel/category.'
+      : ''
+
     throw new HttpError(
       502,
-      'Discord rejected the message (' + response.status + ')' + (discordMessage ? ': ' + discordMessage : ''),
+      'Discord rejected the message (' + response.status + ')' + (discordMessage ? ': ' + discordMessage : '') + hint,
       { discord_status: response.status, discord_response: responseBody, channel_id: cleanChannelId },
     )
   }
