@@ -21,6 +21,7 @@ export interface EquipmentItem {
 
 export interface SkillIngredient {
   item_key: string
+  label?: string
   quantity: number
   icon?: string
   src_skill?: string
