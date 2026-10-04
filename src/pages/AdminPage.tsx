@@ -19,6 +19,9 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   const [memberApiToken, setMemberApiToken] = useState('')
   const [apiBusy, setApiBusy] = useState(false)
   const [syncBusy, setSyncBusy] = useState<string | null>(null)
+  const [leaderboardDiscordChannel, setLeaderboardDiscordChannel] = useState('')
+  const [leaderboardDiscordMessage, setLeaderboardDiscordMessage] = useState('')
+  const [leaderboardDiscordBusy, setLeaderboardDiscordBusy] = useState(false)
 
   const refresh = async () => {
     const [profileRows, categoryRows, watchRows, clanState] = await Promise.all([
@@ -39,8 +42,13 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
     if (!apiMember && profileRows[0]) setApiMember(profileRows[0].id)
 
     if (isOfficer(currentProfile.app_role)) {
-      const perms = await apiGet<{ permissions: Array<{ profile_id: string; category_id: string }> }>('/api/admin/fulfilment')
+      const [perms, leaderboardDiscord] = await Promise.all([
+        apiGet<{ permissions: Array<{ profile_id: string; category_id: string }> }>('/api/admin/fulfilment'),
+        apiGet<{ config: { channel_id?: string; message_id?: string } }>('/api/admin/leaderboard-discord'),
+      ])
       setPermissions(perms.permissions ?? [])
+      setLeaderboardDiscordChannel(leaderboardDiscord.config?.channel_id ?? '')
+      setLeaderboardDiscordMessage(leaderboardDiscord.config?.message_id ?? '')
     }
   }
 
@@ -128,6 +136,47 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       setMessage('Discord test sent for ' + category.label + (result?.message_id ? ' ✓' : '.'))
     } catch (error: any) {
       setMessage(error.message ?? 'Discord test failed.')
+    }
+  }
+
+  const saveLeaderboardDiscord = async () => {
+    try {
+      setLeaderboardDiscordBusy(true)
+      const result: any = await apiPut('/api/admin/leaderboard-discord', {
+        channel_id: leaderboardDiscordChannel.trim(),
+      })
+      setLeaderboardDiscordMessage(result?.config?.message_id ?? '')
+      setMessage(
+        leaderboardDiscordChannel.trim()
+          ? 'Leaderboard Discord channel saved. Publish once to create the live leaderboard message.'
+          : 'Leaderboard Discord publishing disabled.'
+      )
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not save leaderboard Discord channel.')
+    } finally {
+      setLeaderboardDiscordBusy(false)
+    }
+  }
+
+  const publishLeaderboardDiscord = async () => {
+    try {
+      setLeaderboardDiscordBusy(true)
+      if (!leaderboardDiscordChannel.trim()) {
+        setMessage('Save a Discord channel ID first.')
+        return
+      }
+      const result: any = await apiPost('/api/admin/leaderboard-discord/publish')
+      setLeaderboardDiscordMessage(result?.message_id ?? leaderboardDiscordMessage)
+      setMessage(
+        result?.edited
+          ? 'Discord skill leaderboard refreshed in place ✓'
+          : 'Discord skill leaderboard published ✓ Future member syncs will update this same message automatically.'
+      )
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not publish Discord skill leaderboard.')
+    } finally {
+      setLeaderboardDiscordBusy(false)
     }
   }
 
