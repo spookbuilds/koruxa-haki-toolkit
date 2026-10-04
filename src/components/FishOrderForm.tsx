@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { fishCatalogue, fishPrice } from '../data/orderForms'
 import { fishEmoji } from '../data/orderVisuals'
+import fishHeader from '../../assets/images/orders/fish-header.png'
 
 type Line = { id: string; fish: string; preparation: 'raw' | 'cooked'; quantity: number; unitPrice: number }
 
@@ -44,7 +45,7 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
   return (
     <form className="flash-order-layout" onSubmit={submit}>
       <div className="order-board-main">
-        <div className="board-heading fish-heading">
+        <div className="board-heading fish-heading board-heading-art" style={{ backgroundImage: `linear-gradient(90deg, rgba(7,18,31,.90), rgba(13,22,38,.62) 52%, rgba(10,14,24,.82)), url(${fishHeader})` }}>
           <span>HAKI FISH MARKET</span>
           <h2>Fresh Catch Order Board</h2>
           <p>Click the fish you want, choose raw or cooked, then build one complete order.</p>
