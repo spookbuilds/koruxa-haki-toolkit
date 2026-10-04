@@ -258,7 +258,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
                 <strong>{row.total.toLocaleString()} GP</strong>
               </div>
             </div>
-          )) : <p className="empty">Click a material above to start the order.</p>}
+          )) : <p className="empty">No materials added yet. Choose one above to start your order.</p>}
           {rows.length ? <div className="flash-total"><span>ORDER TOTAL</span><strong>{grandTotal.toLocaleString()} GP</strong></div> : null}
         </div>
 
