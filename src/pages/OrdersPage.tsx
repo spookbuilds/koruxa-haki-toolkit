@@ -4,10 +4,19 @@ import OreGemOrderForm from '../components/OreGemOrderForm'
 import CatalogueOrderForm from '../components/CatalogueOrderForm'
 import PotionOrderForm from '../components/PotionOrderForm'
 import { getOrderCategories, getOrders, invokeKoruxa } from '../lib/data'
-import { apiPost } from '../lib/api'
+import { apiGet, apiPost, apiPut } from '../lib/api'
 import type { ClanOrder, OrderCategory, Profile } from '../types'
 
 type QueueView = 'mine' | 'claimable' | 'working' | 'ready' | 'active' | 'history'
+
+type ShopSupplier = {
+  profile_id: string
+  category_id: string
+  name: string
+  status: 'available' | 'busy'
+  updated_at?: string | null
+  is_self?: boolean
+}
 
 function categoryDisplayLabel(category: OrderCategory) {
   if (category.id === 'ore-gems') return 'Mining · Ore & Uncut Gems'
@@ -32,6 +41,7 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
   const outsider = currentProfile.access_role === 'outsider' || (!currentProfile.clan_verified && currentProfile.app_role !== 'owner')
   const [orders, setOrders] = useState<ClanOrder[]>([])
   const [categories, setCategories] = useState<OrderCategory[]>([])
+  const [suppliers, setSuppliers] = useState<ShopSupplier[]>([])
   const [activeCategory, setActiveCategory] = useState('')
   const [queueView, setQueueView] = useState<QueueView>('mine')
   const [message, setMessage] = useState('')
@@ -39,9 +49,14 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
   const [verifying, setVerifying] = useState(false)
 
   const refresh = async () => {
-    const [orderRows, categoryRows] = await Promise.all([getOrders(), getOrderCategories()])
+    const [orderRows, categoryRows, supplierRows] = await Promise.all([
+      getOrders(),
+      getOrderCategories(),
+      apiGet<{ suppliers: ShopSupplier[] }>('/api/order-suppliers'),
+    ])
     setOrders(orderRows)
     setCategories(categoryRows)
+    setSuppliers(supplierRows.suppliers ?? [])
     if (!activeCategory && categoryRows[0]) setActiveCategory(categoryRows[0].id)
   }
 
@@ -94,6 +109,25 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
   }
 
   const activeCategoryInfo = categories.find((category) => category.id === activeCategory)
+  const activeSuppliers = suppliers.filter((supplier) => supplier.category_id === activeCategory)
+  const availableSuppliers = activeSuppliers.filter((supplier) => supplier.status === 'available')
+  const busySuppliers = activeSuppliers.filter((supplier) => supplier.status === 'busy')
+  const mySupplier = activeSuppliers.find((supplier) => supplier.profile_id === currentProfile.id)
+
+  const toggleMySupplierStatus = async () => {
+    if (!mySupplier || !activeCategory) return
+    const nextStatus = mySupplier.status === 'busy' ? 'available' : 'busy'
+    try {
+      await apiPut('/api/order-suppliers/' + activeCategory + '/status', { status: nextStatus })
+      setMessage(nextStatus === 'busy'
+        ? 'You are now marked Busy for ' + (activeCategoryInfo?.label ?? 'this shop') + '. Orders can still be placed.'
+        : 'You reopened ' + (activeCategoryInfo?.label ?? 'this shop') + ' and are marked Available.')
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not update supplier availability.')
+    }
+  }
+
   const verifyClanMembership = async () => {
     if (!verificationToken.trim()) return
     try {
@@ -177,6 +211,50 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
             </button>
           ))}
         </div>
+
+        <section className="shop-supplier-panel">
+          <div className="shop-supplier-head">
+            <div>
+              <span className="eyebrow">SHOP OWNERS</span>
+              <h3>Available suppliers</h3>
+              <p>These are the clan members designated to fulfil {categoryDisplayLabel(activeCategoryInfo ?? ({ id: activeCategory, label: 'this shop' } as OrderCategory))} orders.</p>
+            </div>
+            {mySupplier ? <button
+              type="button"
+              className={mySupplier.status === 'busy' ? 'supplier-toggle reopen' : 'supplier-toggle'}
+              onClick={toggleMySupplierStatus}
+            >
+              {mySupplier.status === 'busy' ? '✓ Reopen shop' : '⏸ Mark myself busy'}
+            </button> : null}
+          </div>
+
+          <div className="shop-supplier-list">
+            {activeSuppliers.length ? activeSuppliers.map((supplier) => (
+              <div className={'shop-supplier-chip ' + supplier.status} key={supplier.profile_id}>
+                <span className="supplier-status-dot" />
+                <div>
+                  <strong>{supplier.name}{supplier.is_self ? ' · You' : ''}</strong>
+                  <small>{supplier.status === 'busy' ? 'Busy / temporarily unavailable' : 'Available to fulfil orders'}</small>
+                </div>
+              </div>
+            )) : <div className="shop-no-suppliers">No designated suppliers have been assigned to this shop yet.</div>}
+          </div>
+
+          {activeSuppliers.length === 0 ? <div className="shop-warning danger">
+            <strong>⚠ No suppliers assigned</strong>
+            <span>You can still place an order, but there is currently nobody designated to fulfil this shop.</span>
+          </div> : availableSuppliers.length === 0 ? <div className="shop-warning danger">
+            <strong>⚠ All suppliers are currently busy</strong>
+            <span>Your order can still be submitted, but it may remain unfilled until a supplier reopens their shop.</span>
+          </div> : busySuppliers.length > 0 ? <div className="shop-warning">
+            <strong>⚠ One or more suppliers are currently unavailable</strong>
+            <span>Please check the supplier list above. Orders are still accepted, but fulfilment may take longer.</span>
+          </div> : <div className="shop-open-note">
+            <span>●</span>
+            <strong>Shop open</strong>
+            <small>{availableSuppliers.length} supplier{availableSuppliers.length === 1 ? '' : 's'} currently available.</small>
+          </div>}
+        </section>
 
         <div className={'exchange-board exchange-board-' + (activeCategory || 'generic')}>
           {activeCategory === 'fish' ? <FishOrderForm onSubmit={insertOrder} /> :
