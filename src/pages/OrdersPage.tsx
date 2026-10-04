@@ -308,6 +308,7 @@ export default function OrdersPage({ currentProfile, onProfileChanged }: { curre
                 title="Cooking · Non-Fish Food"
                 subtitle="Bread, popcorn, fruit dishes, pies, preserves and the other non-fish Cooking recipes."
                 excludeLabels={cookedFishLabels}
+                categoryId="fish"
                 onSubmit={insertOrder}
               />
             </div> :
