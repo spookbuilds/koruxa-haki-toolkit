@@ -272,32 +272,56 @@ async function listProfiles(env) {
   return results.map(profileFromRow)
 }
 
+function normalizeBankItem(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+}
+
+function resolveBankItem(bankItems, requestedKey, requestedName = '') {
+  const key = String(requestedKey || '').trim()
+  const name = String(requestedName || '').trim()
+  if (!key && !name) return null
+
+  const exact = bankItems.find((item) => String(item.item_key || '') === key)
+  if (exact) return exact
+
+  const wanted = new Set([normalizeBankItem(key), normalizeBankItem(name)].filter(Boolean))
+  return bankItems.find((item) =>
+    wanted.has(normalizeBankItem(item.item_key)) ||
+    wanted.has(normalizeBankItem(item.name))
+  ) || null
+}
+
 async function bankWatchStatus(env) {
   const state = await getClanState(env)
   const bankItems = Array.isArray(state?.bank_json?.items) ? state.bank_json.items : []
-  const quantities = new Map()
-  for (const item of bankItems) {
-    const key = String(item.item_key || '')
-    if (!key) continue
-    quantities.set(key, (quantities.get(key) || 0) + Number(item.quantity || 0))
-  }
+
   const { results } = await env.DB.prepare('SELECT * FROM bank_watch_items ORDER BY display_name').all()
   return results.map((row) => {
-    const quantity = Number(quantities.get(row.item_key) || 0)
+    const match = resolveBankItem(bankItems, row.item_key, row.display_name)
+    const quantity = match ? Number(match.quantity || 0) : 0
     const minimum = Number(row.minimum_qty || 0)
     const preferred = row.preferred_qty == null ? null : Number(row.preferred_qty)
+
     let status = 'healthy'
     if (quantity <= 0) status = 'empty'
     else if (quantity < minimum) status = 'critical'
     else if (preferred != null && quantity < preferred) status = 'low'
+
     return {
       item_key: row.item_key,
-      display_name: row.display_name,
+      matched_item_key: match?.item_key ?? null,
+      display_name: match?.name || row.display_name,
       minimum_qty: minimum,
       preferred_qty: preferred,
       show_on_home: Boolean(row.show_on_home),
       quantity,
       status,
+      matched: Boolean(match),
     }
   })
 }
@@ -877,9 +901,30 @@ async function handle(context) {
   if (method === 'POST' && joined === 'bank/watch') {
     const user = await requireUser(context, OFFICER_ROLES)
     const body = await bodyJson(request)
-    const itemKey = String(body.item_key || '').trim()
-    if (!itemKey) throw new HttpError(400, 'Item key is required')
+    const requestedKey = String(body.item_key || '').trim()
+    const requestedName = String(body.display_name || '').trim()
+
+    const state = await getClanState(env)
+    const bankItems = Array.isArray(state?.bank_json?.items) ? state.bank_json.items : []
+    const matched = resolveBankItem(bankItems, requestedKey, requestedName)
+
+    if (!matched) {
+      throw new HttpError(400, 'That item could not be matched to the current clan bank. Choose an item from the bank item list.')
+    }
+
+    const minimum = Math.max(0, Number(body.minimum_qty || 0))
+    const preferredRaw = body.preferred_qty == null || body.preferred_qty === '' ? null : Math.max(0, Number(body.preferred_qty))
+    const preferred = preferredRaw != null && preferredRaw < minimum ? minimum : preferredRaw
+    const itemKey = String(matched.item_key)
+    const displayName = String(matched.name || requestedName || itemKey)
     const now = nowIso()
+
+    // If an older watch was entered with a display-name-derived key, replace it
+    // with Koruxa's real item_key so future syncs remain exact.
+    if (requestedKey && requestedKey !== itemKey) {
+      await env.DB.prepare('DELETE FROM bank_watch_items WHERE item_key=?').bind(requestedKey).run()
+    }
+
     await env.DB.prepare(
       `INSERT INTO bank_watch_items
        (item_key,display_name,minimum_qty,preferred_qty,show_on_home,updated_by,updated_at)
@@ -888,11 +933,17 @@ async function handle(context) {
        display_name=excluded.display_name,minimum_qty=excluded.minimum_qty,preferred_qty=excluded.preferred_qty,
        show_on_home=excluded.show_on_home,updated_by=excluded.updated_by,updated_at=excluded.updated_at`,
     ).bind(
-      itemKey, String(body.display_name || itemKey), Number(body.minimum_qty || 0),
-      body.preferred_qty == null || body.preferred_qty === '' ? null : Number(body.preferred_qty),
+      itemKey, displayName, minimum, preferred,
       body.show_on_home === false ? 0 : 1, user.id, now,
     ).run()
-    return json({ success: true })
+
+    return json({
+      success: true,
+      item_key: itemKey,
+      display_name: displayName,
+      current_quantity: Number(matched.quantity || 0),
+      preferred_adjusted: preferredRaw != null && preferredRaw < minimum,
+    })
   }
 
   if (parts[0] === 'bank' && parts[1] === 'watch' && parts[2] && method === 'DELETE') {
