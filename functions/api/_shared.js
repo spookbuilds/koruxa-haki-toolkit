@@ -180,6 +180,38 @@ export async function fetchKoruxa(path, token) {
   return data
 }
 
+export function normalizeSkills(value) {
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object'
+      ? Object.entries(value).map(([key, entry]) => {
+          if (entry && typeof entry === 'object') return { skill_key: key, ...entry }
+          return { skill_key: key, level: entry }
+        })
+      : []
+
+  return raw
+    .map((entry) => {
+      const key = String(
+        entry?.skill_key ??
+        entry?.skill ??
+        entry?.key ??
+        entry?.name ??
+        ''
+      ).trim().toLowerCase().replace(/\s+/g, '_')
+
+      if (!key) return null
+
+      return {
+        ...entry,
+        skill_key: key,
+        level: Number(entry?.level ?? entry?.skill_level ?? entry?.lvl ?? 0),
+        xp: Number(entry?.xp ?? entry?.experience ?? entry?.total_xp ?? 0),
+      }
+    })
+    .filter(Boolean)
+}
+
 export function snapshotFromRow(row) {
   if (!row) return null
   return {
@@ -195,7 +227,7 @@ export function snapshotFromRow(row) {
     is_online: Boolean(row.is_online),
     is_premium: Boolean(row.is_premium),
     rank_badge: row.rank_badge,
-    skills: parseJson(row.skills_json, []),
+    skills: normalizeSkills(parseJson(row.skills_json, [])),
     equipment: parseJson(row.equipment_json, []),
     farms: parseJson(row.farms_json, []),
     research_summary: parseJson(row.research_summary_json, {}),
@@ -223,7 +255,7 @@ export async function writePlayerSnapshot(env, userId, me) {
       me.is_online ? 1 : 0,
       me.is_premium ? 1 : 0,
       me.rank_badge || null,
-      JSON.stringify(me.skills || []),
+      JSON.stringify(normalizeSkills(me.skills || [])),
       JSON.stringify(me.equipment || []),
       JSON.stringify(me.farms || []),
       JSON.stringify(me.research || {}),
