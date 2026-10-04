@@ -40,7 +40,11 @@ export default function CraftersPage() {
   }, [])
 
   const actions = useMemo(() => catalog
-    .filter((action) => action.is_recipe && (!query || action.reward_label.toLowerCase().includes(query.toLowerCase())))
+    .filter((action) =>
+      action.is_recipe &&
+      action.skill_key !== 'alchemy' &&
+      (!query || action.reward_label.toLowerCase().includes(query.toLowerCase()))
+    )
     .slice(0, 100), [catalog, query])
 
   const candidates = (action: SkillAction): Candidate[] => snapshots
@@ -66,7 +70,7 @@ export default function CraftersPage() {
         <div>
           <span className="eyebrow">CAPABILITY FINDER</span>
           <h1>Who Can Make This?</h1>
-          <p className="muted">Search a crafted item to see synced clan members who meet the skill level, plus their relevant equipped tool.</p>
+          <p className="muted">Search a crafted item to see synced clan members who meet the skill level, plus their relevant equipped tool. Alchemy transmutation is excluded because clan members do not request it from one another.</p>
         </div>
       </header>
 
