@@ -1561,6 +1561,77 @@ async function handle(context) {
     return json({ success: true, category_id: categoryId, status })
   }
 
+  if (method === 'GET' && joined === 'combat/monsters') {
+    const user = await requireUser(context)
+    await ensureCurrentOrderCategories(env)
+    await ensureCombatOrderTables(env)
+
+    const permission = await env.DB.prepare(
+      "SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id='combat'"
+    ).bind(user.id).first()
+
+    const index = await combatMonsterIndex(env)
+    const { results } = await env.DB.prepare(
+      'SELECT monster_key,monster_name FROM combat_supplier_monsters WHERE user_id=? ORDER BY monster_name'
+    ).bind(user.id).all()
+
+    return json({
+      can_manage: Boolean(permission),
+      monsters: index,
+      selected: results.map((row) => ({ key: row.monster_key, name: row.monster_name })),
+    })
+  }
+
+  if (method === 'PUT' && joined === 'combat/monsters') {
+    const user = await requireUser(context)
+    await ensureCombatOrderTables(env)
+    const permission = await env.DB.prepare(
+      "SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id='combat'"
+    ).bind(user.id).first()
+    if (!permission) throw new HttpError(403, 'Only designated Combat suppliers can choose monsters to farm')
+
+    const body = await bodyJson(request)
+    const requested = Array.isArray(body.monsters) ? body.monsters : []
+    if (requested.length > 60) throw new HttpError(400, 'Choose at most 60 monsters')
+
+    const index = await combatMonsterIndex(env)
+    const names = new Map(index.map((monster) => [monster.key, monster.name]))
+    const selected = [...new Set(requested.map((value) => String(value || '').trim()).filter(Boolean))]
+      .filter((key) => names.has(key))
+
+    const now = nowIso()
+    const statements = [
+      env.DB.prepare('DELETE FROM combat_supplier_monsters WHERE user_id=?').bind(user.id),
+      ...selected.map((key) => env.DB.prepare(
+        'INSERT INTO combat_supplier_monsters (user_id,monster_key,monster_name,updated_at) VALUES (?,?,?,?)'
+      ).bind(user.id, key, names.get(key), now)),
+    ]
+    await env.DB.batch(statements)
+
+    const warnings = []
+    for (let i = 0; i < selected.length; i += 4) {
+      const chunk = selected.slice(i, i + 4)
+      const settled = await Promise.allSettled(chunk.map(async (key) => {
+        const cached = await env.DB.prepare('SELECT updated_at FROM combat_monster_cache WHERE monster_key=?').bind(key).first()
+        const fresh = cached?.updated_at && Date.now() - new Date(cached.updated_at).getTime() < 7 * 24 * 60 * 60 * 1000
+        if (!fresh) await syncCombatMonster(env, key)
+      }))
+      settled.forEach((result, indexInChunk) => {
+        if (result.status === 'rejected') {
+          warnings.push((names.get(chunk[indexInChunk]) || chunk[indexInChunk]) + ': ' + (result.reason instanceof Error ? result.reason.message : String(result.reason)))
+        }
+      })
+    }
+
+    return json({ success: true, selected: selected.length, warnings })
+  }
+
+  if (method === 'GET' && joined === 'combat/available-drops') {
+    await requireUser(context)
+    const monsters = await combatAvailableCatalogue(env)
+    return json({ monsters })
+  }
+
   if (method === 'GET' && joined === 'order-categories') {
     await requireUser(context)
     await ensureCurrentOrderCategories(env)
