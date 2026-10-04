@@ -1,9 +1,16 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { ORE_GEM_ITEM_CAP, oreGemMaterials, requiredOreForGems } from '../data/orderForms'
 import { materialEmoji } from '../data/orderVisuals'
 import oreGemHeader from '../../assets/images/orders/ore-gem-header.png'
+import { getSkillActions } from '../lib/data'
+import { apiPost } from '../lib/api'
+import SupplierOfferPanel, { type SupplierOfferOption } from './SupplierOfferPanel'
 
 type Basket = Record<string, { extraOre: number; gems: number }>
+
+function supplierKey(kind: 'ore' | 'gem', name: string) {
+  return kind + ':' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
 
 export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: string, payload: Record<string, unknown>) => Promise<void> }) {
   const [materialName, setMaterialName] = useState<string>(oreGemMaterials[0].name)
@@ -12,6 +19,73 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
   const [notes, setNotes] = useState('')
   const [basket, setBasket] = useState<Basket>({})
   const [error, setError] = useState('')
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOfferOption[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadLevels = async () => {
+      try {
+        let actions = await getSkillActions()
+        if (!actions.some((action) => action.skill_key === 'mining')) {
+          await apiPost('/api/catalog/wiki-sync', { skill_key: 'mining' })
+          actions = await getSkillActions()
+        }
+
+        if (cancelled) return
+        const mining = actions.filter((action) => action.skill_key === 'mining')
+        const options: SupplierOfferOption[] = []
+
+        for (const entry of oreGemMaterials) {
+          const oreLabel = entry.name + ' Ore'
+          const oreAction = mining.find((action) => action.reward_label.toLowerCase() === oreLabel.toLowerCase())
+          options.push({
+            key: supplierKey('ore', entry.name),
+            label: oreLabel,
+            group: 'Ore',
+            skillKey: 'mining',
+            minLevel: oreAction ? Number(oreAction.min_level || 1) : null,
+          })
+
+          if (entry.gemName) {
+            const gemLabel = 'Uncut ' + entry.gemName
+            const gemAction = mining.find((action) =>
+              action.reward_label.toLowerCase() === gemLabel.toLowerCase() ||
+              action.reward_label.toLowerCase() === entry.gemName!.toLowerCase()
+            )
+            options.push({
+              key: supplierKey('gem', entry.gemName),
+              label: gemLabel,
+              group: 'Uncut Gems',
+              skillKey: 'mining',
+              minLevel: gemAction ? Number(gemAction.min_level || 1) : null,
+            })
+          }
+        }
+
+        setSupplierOptions(options)
+      } catch {
+        setSupplierOptions(oreGemMaterials.flatMap((entry) => {
+          const output: SupplierOfferOption[] = [{
+            key: supplierKey('ore', entry.name),
+            label: entry.name + ' Ore',
+            group: 'Ore',
+            skillKey: 'mining',
+            minLevel: null,
+          }]
+          if (entry.gemName) output.push({
+            key: supplierKey('gem', entry.gemName),
+            label: 'Uncut ' + entry.gemName,
+            group: 'Uncut Gems',
+            skillKey: 'mining',
+            minLevel: null,
+          })
+          return output
+        }))
+      }
+    }
+    loadLevels()
+    return () => { cancelled = true }
+  }, [])
 
   const material = oreGemMaterials.find((entry) => entry.name === materialName) ?? oreGemMaterials[0]
   const rows = useMemo(() => oreGemMaterials.flatMap((entry) => {
@@ -64,6 +138,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
         unit_price: row.material.orePrice,
         line_total: row.oreTotal,
         emoji: '⛏️',
+        offer_key: supplierKey('ore', row.material.name),
         description: '⛏️ ' + row.totalOre.toLocaleString() + ' × ' + row.material.name + ' Ore' + (row.requiredOre ? ' (' + row.requiredOre.toLocaleString() + ' required + ' + row.extraOre.toLocaleString() + ' extra)' : ''),
       })
       if (row.gems) output.push({
@@ -74,6 +149,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
         unit_price: row.material.gemPrice,
         line_total: row.gemTotal,
         emoji: '💎',
+        offer_key: supplierKey('gem', String(row.material.gemName)),
         description: '💎 ' + row.gems.toLocaleString() + ' × Uncut ' + row.material.gemName,
       })
       return output
@@ -137,6 +213,18 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
         </div>
 
         {error ? <div className="notice danger-note">{error}</div> : null}
+
+        <SupplierOfferPanel
+          categoryId="ore-gems"
+          options={supplierOptions}
+          selectedKey={type === 'ore'
+            ? supplierKey('ore', material.name)
+            : supplierKey('gem', String(material.gemName ?? ''))}
+          basketKeys={rows.flatMap((row) => [
+            ...(row.totalOre ? [supplierKey('ore', row.material.name)] : []),
+            ...(row.gems && row.material.gemName ? [supplierKey('gem', row.material.gemName)] : []),
+          ])}
+        />
 
         <div className="order-preview-board">
           <div className="order-preview-title"><span>LIVE ORDER PREVIEW</span><strong>{rows.length} material{rows.length === 1 ? '' : 's'}</strong></div>
