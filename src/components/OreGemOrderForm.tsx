@@ -35,10 +35,10 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
     setError('')
     const qty = Math.max(1, Math.floor(quantity))
     const current = basket[material.name] ?? { extraOre: 0, gems: 0 }
-    if (type === 'gem' && (!material.gemName || material.gemPrice == null)) return setError('This material has no matching gem.')
+    if (type === 'gem' && (!material.gemName || material.gemPrice == null)) return setError('This material has no matching uncut gem.')
     const nextExtra = type === 'ore' ? current.extraOre + qty : current.extraOre
     const nextGems = type === 'gem' ? current.gems + qty : current.gems
-    if (nextGems > ORE_GEM_ITEM_CAP) return setError('No individual gem quantity can exceed ' + ORE_GEM_ITEM_CAP.toLocaleString() + '.')
+    if (nextGems > ORE_GEM_ITEM_CAP) return setError('No individual uncut gem quantity can exceed ' + ORE_GEM_ITEM_CAP.toLocaleString() + '.')
     if (nextExtra > ORE_GEM_ITEM_CAP) return setError('Extra ore cannot exceed ' + ORE_GEM_ITEM_CAP.toLocaleString() + ' for one material.')
     setBasket((old) => ({ ...old, [material.name]: { extraOre: nextExtra, gems: nextGems } }))
   }
@@ -66,18 +66,18 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
         description: '⛏️ ' + row.totalOre.toLocaleString() + ' × ' + row.material.name + ' Ore' + (row.requiredOre ? ' (' + row.requiredOre.toLocaleString() + ' required + ' + row.extraOre.toLocaleString() + ' extra)' : ''),
       })
       if (row.gems) output.push({
-        item: row.material.gemName,
+        item: 'Uncut ' + row.material.gemName,
         type: 'gem',
         quantity: row.gems,
         matching_ore: row.material.name,
         unit_price: row.material.gemPrice,
         line_total: row.gemTotal,
         emoji: '💎',
-        description: '💎 ' + row.gems.toLocaleString() + ' × ' + row.material.gemName + ' (Uncut Gem)',
+        description: '💎 ' + row.gems.toLocaleString() + ' × Uncut ' + row.material.gemName,
       })
       return output
     })
-    await onSubmit('Ore & Gem order · ' + grandTotal.toLocaleString() + ' GP', {
+    await onSubmit('Ore & Uncut Gem order · ' + grandTotal.toLocaleString() + ' GP', {
       form: 'ore-gems',
       lines,
       total_gp: grandTotal,
@@ -93,8 +93,8 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
       <div className="order-board-main">
         <div className="board-heading ore-heading">
           <span>KORUXA • HAKI MARKET</span>
-          <h2>Ore & Gem Price Board</h2>
-          <p>Click a material tier, choose ore or gem, and matching ore is calculated automatically.</p>
+          <h2>Ore & Uncut Gem Price Board</h2>
+          <p>Click a material tier, choose ore or an uncut gem, and matching ore is calculated automatically.</p>
         </div>
 
         <section className="item-button-group">
@@ -110,7 +110,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
                 <span className="item-choice-emoji">{materialEmoji[entry.name] ?? '⛏️'}</span>
                 <span>
                   <strong>{entry.name}</strong>
-                  <small>{entry.orePrice.toLocaleString()} GP ore{entry.gemName ? ' · ' + entry.gemName : ''}</small>
+                  <small>{entry.orePrice.toLocaleString()} GP ore{entry.gemName ? ' · Uncut ' + entry.gemName : ''}</small>
                 </span>
               </button>
             ))}
@@ -120,12 +120,12 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
         <div className="selected-order-builder compact-builder">
           <div className="selected-item-head">
             <div className="selected-item-icon">{materialEmoji[material.name] ?? '⛏️'}</div>
-            <div><span className="eyebrow">SELECTED TIER</span><h3>{material.name}</h3><small>{material.gemName ? material.gemName + ' available' : 'Ore only'}</small></div>
+            <div><span className="eyebrow">SELECTED TIER</span><h3>{material.name}</h3><small>{material.gemName ? 'Uncut ' + material.gemName + ' available' : 'Ore only'}</small></div>
           </div>
 
           <div className="choice-toggle-row">
             <button type="button" className={type === 'ore' ? 'choice-toggle active' : 'choice-toggle'} onClick={() => setType('ore')}>⛏️ Ore · {material.orePrice.toLocaleString()} GP</button>
-            {material.gemName ? <button type="button" className={type === 'gem' ? 'choice-toggle active' : 'choice-toggle'} onClick={() => setType('gem')}>💎 {material.gemName} · {Number(material.gemPrice).toLocaleString()} GP</button> : null}
+            {material.gemName ? <button type="button" className={type === 'gem' ? 'choice-toggle active' : 'choice-toggle'} onClick={() => setType('gem')}>💎 Uncut {material.gemName} · {Number(material.gemPrice).toLocaleString()} GP</button> : null}
           </div>
 
           <div className="selected-item-controls">
@@ -144,7 +144,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
               <div className="preview-row">
                 <div>
                   <strong>{materialEmoji[row.material.name] ?? '⛏️'} {row.material.name}</strong>
-                  <small>{row.gems ? '💎 ' + row.gems.toLocaleString() + ' ' + row.material.gemName + ' · ' : ''}⛏️ {row.totalOre.toLocaleString()} ore total</small>
+                  <small>{row.gems ? '💎 ' + row.gems.toLocaleString() + ' Uncut ' + row.material.gemName + ' · ' : ''}⛏️ {row.totalOre.toLocaleString()} ore total</small>
                 </div>
                 <button type="button" onClick={() => clearMaterial(row.material.name)}>Remove</button>
               </div>
@@ -166,14 +166,14 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
         <label>Order notes
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} maxLength={500} placeholder="Optional notes for the fulfiller…" />
         </label>
-        <button className="exchange-submit" disabled={!rows.length}>Submit ore & gem order</button>
+        <button className="exchange-submit" disabled={!rows.length}>Submit ore & uncut gem order</button>
       </div>
 
       <aside className="order-board-sidebar">
-        <div className="ratio-card blue-ratio"><span className="ratio-label">1 – 4,000 GEMS</span><strong>50 : 1</strong><small>ORE : GEM</small></div>
-        <div className="ratio-card purple-ratio"><span className="ratio-label">OVER 4,000 GEMS</span><strong>100 : 1</strong><small>ORE : GEM</small></div>
+        <div className="ratio-card blue-ratio"><span className="ratio-label">1 – 4,000 UNCUT GEMS</span><strong>50 : 1</strong><small>ORE : GEM</small></div>
+        <div className="ratio-card purple-ratio"><span className="ratio-label">OVER 4,000 UNCUT GEMS</span><strong>100 : 1</strong><small>ORE : GEM</small></div>
         <div className="flash-card gold"><span className="flash-icon">!</span><div><strong>Important rule</strong><p>Required ore must match the gem tier. The app adds it automatically and keeps your extra ore separate.</p></div></div>
-        <div className="flash-card blue"><span className="flash-icon">✓</span><div><strong>One complete order</strong><p>Build the whole ore and gem request here. Multiple orders cannot be used to bypass the ratio.</p></div></div>
+        <div className="flash-card blue"><span className="flash-icon">✓</span><div><strong>One complete order</strong><p>Build the whole ore and uncut gem request here. Multiple orders cannot be used to bypass the ratio.</p></div></div>
       </aside>
     </form>
   )
