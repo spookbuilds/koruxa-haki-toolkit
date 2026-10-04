@@ -39,7 +39,7 @@ function bool(value) {
   return value === true || value === 1 || value === '1'
 }
 
-const WIKI_ORDER_SKILLS = new Set(['smithing','crafting','fletching','jewelery','herblore','farming'])
+const WIKI_ORDER_SKILLS = new Set(['smithing','crafting','fletching','jewelery','herblore','farming','arcana'])
 const PLANNER_SKILLS = [
   'woodcutting',
   'mining',
@@ -378,6 +378,14 @@ async function ensurePlannerData(env, force = false) {
   ).bind(JSON.stringify(result), nowIso()).run()
 
   return result
+}
+
+async function ensureCurrentOrderCategories(env) {
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO order_categories
+      (id,label,description,discord_channel_id,enabled,sort_order)
+      VALUES ('arcana','Arcana · Runes','Crafted rune orders',NULL,1,65)`
+  ).run()
 }
 
 async function getClanState(env) {
@@ -954,6 +962,7 @@ async function handle(context) {
 
   if (method === 'POST' && joined === 'orders') {
     const user = await requireClanUser(context)
+    await ensureCurrentOrderCategories(env)
     const body = await bodyJson(request)
     const categoryId = String(body.category_id || '')
     const category = await env.DB.prepare("SELECT * FROM order_categories WHERE id=? AND enabled=1 AND id<>'other'").bind(categoryId).first()
@@ -1035,6 +1044,7 @@ async function handle(context) {
 
   if (method === 'GET' && joined === 'order-categories') {
     await requireClanUser(context)
+    await ensureCurrentOrderCategories(env)
     const { results } = await env.DB.prepare("SELECT * FROM order_categories WHERE enabled=1 AND id<>'other' ORDER BY sort_order,label").all()
     return json({ categories: results.map((row) => ({
       id: row.id,
