@@ -19,6 +19,7 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<Line[]>([])
   const [supplierOptions, setSupplierOptions] = useState<SupplierOfferOption[]>([])
+  const [supplierSelectedKeys, setSupplierSelectedKeys] = useState<Set<string> | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -113,7 +114,11 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
               <button
                 type="button"
                 key={entry.name}
-                className={fish === entry.name ? 'item-choice active' : 'item-choice'}
+                className={
+                  'item-choice' +
+                  (fish === entry.name ? ' active' : '') +
+                  (supplierSelectedKeys && !supplierSelectedKeys.has(fishOfferKey(entry.name, preparation)) ? ' no-supplier' : '')
+                }
                 onClick={() => setFish(entry.name)}
               >
                 <span className="item-choice-emoji">{fishEmoji[entry.name] ?? '🐟'}</span>
@@ -146,6 +151,7 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
           options={supplierOptions}
           selectedKey={fishOfferKey(fish, preparation)}
           basketKeys={lines.map((line) => fishOfferKey(line.fish, line.preparation))}
+          onCoverageChange={setSupplierSelectedKeys}
         />
 
         <div className="order-preview-board">
