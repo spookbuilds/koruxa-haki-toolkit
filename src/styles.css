@@ -1135,3 +1135,159 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
   .modifier-preset-card { align-items: flex-start; flex-direction: column; }
   .modifier-preset-stats { justify-content: flex-start; }
 }
+
+
+/* ===== MEMBER TIMEZONES ===== */
+.timezone-panel .panel-title {
+  align-items: center;
+}
+.timezone-editor {
+  display: grid;
+  grid-template-columns: minmax(240px,1.3fr) auto auto auto;
+  gap: 10px;
+  align-items: end;
+}
+.member-clock {
+  display: grid;
+  min-width: 170px;
+  gap: 2px;
+  padding: 10px 13px;
+  text-align: right;
+  border: 1px solid #395677;
+  border-radius: 12px;
+  background: linear-gradient(180deg,#132235,#111824);
+}
+.member-clock span,
+.member-clock small {
+  color: #8fa4bc;
+  font-size: .7rem;
+}
+.member-clock strong {
+  color: #fff0a1;
+  font-size: 1.45rem;
+  letter-spacing: -.02em;
+}
+.member-clock.large strong { font-size: 1.8rem; }
+
+.roster-local-time {
+  display: grid;
+  gap: 1px;
+}
+.roster-local-time strong {
+  color: #fff0a1;
+  font-size: .9rem;
+}
+.roster-local-time span {
+  color: #8ea0b6;
+  font-size: .68rem;
+}
+
+.member-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(4,5,10,.76);
+  backdrop-filter: blur(6px);
+}
+.member-info-card {
+  width: min(620px,100%);
+  max-height: min(760px,calc(100vh - 36px));
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid #4a3b62;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right,rgba(84,96,181,.18),transparent 34%),
+    linear-gradient(180deg,#17121f,#12101a);
+  box-shadow: 0 30px 90px rgba(0,0,0,.55);
+}
+.member-info-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.member-info-head h2 {
+  margin: 3px 0;
+  font-size: 1.6rem;
+}
+.member-modal-close {
+  flex: 0 0 auto;
+}
+.member-time-card {
+  display: grid;
+  gap: 4px;
+  margin: 18px 0;
+  padding: 17px;
+  text-align: center;
+  border: 1px solid #42638a;
+  border-radius: 15px;
+  background:
+    radial-gradient(circle at 50% 0,rgba(83,174,245,.12),transparent 45%),
+    linear-gradient(180deg,#152437,#121925);
+}
+.member-time-card span,
+.member-time-card small {
+  color: #95aac3;
+}
+.member-time-card strong {
+  color: #fff1a0;
+  font-size: 2.4rem;
+  line-height: 1;
+}
+.member-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  gap: 9px;
+}
+.member-info-grid > div {
+  display: grid;
+  gap: 4px;
+  min-height: 70px;
+  padding: 10px 11px;
+  border: 1px solid #30283d;
+  border-radius: 10px;
+  background: #15111c;
+}
+.member-info-grid span {
+  color: #7f90a6;
+  font-size: .7rem;
+}
+.member-info-grid strong {
+  color: #e6edf6;
+  font-size: .86rem;
+}
+.member-self-timezone {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #4d4324;
+  border-radius: 10px;
+  background: #211c11;
+}
+
+@media (max-width: 900px) {
+  .timezone-editor {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 620px) {
+  .timezone-panel .panel-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .member-clock {
+    width: 100%;
+    text-align: left;
+  }
+  .timezone-editor {
+    grid-template-columns: 1fr;
+  }
+  .member-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
