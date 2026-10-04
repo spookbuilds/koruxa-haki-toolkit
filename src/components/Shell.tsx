@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import type { Profile } from '../types'
+import hakiLogo from '../../assets/images/haki.png'
 
 const clanLinks = [
   ['/', 'Clan Home', '🏠'],
@@ -30,7 +31,7 @@ export default function Shell({ profile, onSignOut, children }: { profile: Profi
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">H</div>
+          <div className="brand-mark"><img src={hakiLogo} alt="" aria-hidden="true" /></div>
           <div><strong>HAKI Toolkit</strong><span>{outsider ? 'StrawHats order exchange' : 'Koruxa clan companion'}</span></div>
         </div>
         <nav className="desktop-nav">
@@ -51,7 +52,7 @@ export default function Shell({ profile, onSignOut, children }: { profile: Profi
 
       <header className="mobile-topbar">
         <div className="brand mobile-brand">
-          <div className="brand-mark">H</div>
+          <div className="brand-mark"><img src={hakiLogo} alt="" aria-hidden="true" /></div>
           <div>
             <strong>HAKI Toolkit</strong>
             <span>{profile?.koruxa_name ?? profile?.display_name ?? (outsider ? 'Outsider' : 'Clan member')}</span>
