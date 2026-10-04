@@ -307,25 +307,6 @@ async function syncThievingCatalogue(env) {
     '/wiki/skills/thieving/index.html',
   ]
 
-  const cellParts = (rowHtml) =>
-    [...String(rowHtml || '').matchAll(/<t([dh])\b[^>]*>([\s\S]*?)<\/t\1>/gi)]
-      .map((match) => ({
-        kind: String(match[1]).toLowerCase(),
-        html: match[2],
-        text: htmlCellText(match[2]),
-      }))
-
-  const normaliseHeader = (value) =>
-    String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
-
-  const headerIndex = (headers, names) => {
-    for (let i = 0; i < headers.length; i += 1) {
-      const header = normaliseHeader(headers[i])
-      if (names.some((name) => header === name || header.includes(name))) return i
-    }
-    return -1
-  }
-
   const linkedItemsFromHtml = (html) =>
     [...String(html || '').matchAll(
       /<a\b[^>]*href=["'](?:https:\/\/koruxa\.com)?\/wiki\/items\/([a-z0-9_-]+)\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
@@ -335,6 +316,9 @@ async function syncThievingCatalogue(env) {
         label: htmlCellText(match[2]),
       }))
       .filter((item) => item.item_key && item.label && !/^view$/i.test(item.label))
+
+  const normaliseHeader = (value) =>
+    String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 
   let bestActions = []
 
@@ -346,83 +330,128 @@ async function syncThievingCatalogue(env) {
       continue
     }
 
+    // Only parse the actual Thieving action table. The page also contains
+    // supporting loot/quantity tables; parsing every table is what produced
+    // bogus groups such as "3–6", "5–15" and "Qty".
+    const allActionsHeading =
+      String(html).match(/<h[23]\b[^>]*>[\s\S]*?All actions[\s\S]*?<\/h[23]>/i)?.[0] ||
+      String(html).match(/<h[23]\b[^>]*>[\s\S]*?Thieving actions[\s\S]*?<\/h[23]>/i)?.[0] ||
+      ''
+
+    let tableHtml = ''
+    if (allActionsHeading) {
+      const startAt = String(html).indexOf(allActionsHeading) + allActionsHeading.length
+      tableHtml = String(html).slice(startAt).match(/<table\b[^>]*>[\s\S]*?<\/table>/i)?.[0] || ''
+    }
+
+    // Fallback: choose the first table whose headers look like a genuine
+    // skill-action table (Lv + Action/Target) rather than an item source table.
+    if (!tableHtml) {
+      const tables = String(html || '').match(/<table\b[^>]*>[\s\S]*?<\/table>/gi) || []
+      tableHtml = tables.find((table) => {
+        const firstRow = table.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/i)?.[0] || ''
+        const headers = [...firstRow.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+          .map((match) => normaliseHeader(htmlCellText(match[1])))
+        const hasLevel = headers.some((header) => ['lv','level','required level'].includes(header))
+        const hasAction = headers.some((header) => ['action','target','npc','node','victim'].includes(header))
+        return hasLevel && hasAction
+      }) || ''
+    }
+
+    if (!tableHtml) continue
+
+    const rows = String(tableHtml).match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+    if (rows.length < 2) continue
+
+    const headerCells = [...rows[0].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((match) => normaliseHeader(htmlCellText(match[1])))
+
+    const levelIndex = headerCells.findIndex((header) => ['lv','level','required level'].includes(header))
+    const sourceIndex = headerCells.findIndex((header) => ['action','target','npc','node','victim'].includes(header))
+    const lootIndexes = headerCells
+      .map((header, index) => ({ header, index }))
+      .filter(({ header }) =>
+        header.includes('loot') ||
+        header.includes('drop') ||
+        header.includes('steal') ||
+        header.includes('reward') ||
+        header.includes('rare roll') ||
+        header.includes('makes')
+      )
+      .map(({ index }) => index)
+
+    if (levelIndex < 0 || sourceIndex < 0) continue
+
     const actions = []
-    const tables = String(html || '').match(/<table\b[^>]*>[\s\S]*?<\/table>/gi) || []
 
-    for (const tableHtml of tables) {
-      const rows = String(tableHtml).match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
-      if (rows.length < 2) continue
+    for (const rowHtml of rows.slice(1)) {
+      const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+        .map((match) => ({ html: match[1], text: htmlCellText(match[1]) }))
 
-      let headers = []
-      let headerRowIndex = -1
+      if (cells.length <= Math.max(levelIndex, sourceIndex)) continue
 
-      for (let rowIndex = 0; rowIndex < Math.min(rows.length, 4); rowIndex += 1) {
-        const parts = cellParts(rows[rowIndex])
-        const texts = parts.map((part) => part.text)
-        const joined = texts.join(' ').toLowerCase()
-        if (
-          parts.some((part) => part.kind === 'h') ||
-          /\b(?:lv|level)\b/.test(joined) && /\b(?:target|action|npc|node|victim|source)\b/.test(joined)
-        ) {
-          headers = texts
-          headerRowIndex = rowIndex
-          break
+      const levelMatch = String(cells[levelIndex]?.text || '').match(/\b(\d{1,3})\b/)
+      const level = levelMatch ? Number(levelMatch[1]) : NaN
+      const source = String(cells[sourceIndex]?.text || '').trim()
+
+      if (!Number.isFinite(level) || level < 1 || level > 150) continue
+      if (!source || /^(?:action|target|npc|node|victim)$/i.test(source)) continue
+
+      const candidateItems = new Map()
+
+      const indexesToRead = lootIndexes.length
+        ? lootIndexes
+        : cells.map((_, index) => index).filter((index) => index > sourceIndex + 2)
+
+      for (const index of indexesToRead) {
+        const cell = cells[index]
+        if (!cell) continue
+
+        for (const item of linkedItemsFromHtml(cell.html)) {
+          candidateItems.set(item.item_key, item.label)
         }
-      }
 
-      if (!headers.length) continue
-
-      const levelIndex = headerIndex(headers, ['lv','level','required level'])
-      const sourceIndex = headerIndex(headers, ['target','action','npc','node','victim','source'])
-      const lootIndex = headerIndex(headers, ['loot','drops','items','rewards','steals','stolen'])
-
-      if (levelIndex < 0 || sourceIndex < 0) continue
-
-      for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
-        const parts = cellParts(rows[rowIndex])
-        if (parts.length <= Math.max(levelIndex, sourceIndex)) continue
-
-        const levelText = parts[levelIndex]?.text || ''
-        const levelMatch = String(levelText).match(/\b(\d{1,3})\b/)
-        const level = levelMatch ? Number(levelMatch[1]) : NaN
-        const source = String(parts[sourceIndex]?.text || '').trim()
-
-        if (!Number.isFinite(level) || level < 1 || level > 150) continue
-        if (!source || /^(?:target|action|npc|node|victim|source)$/i.test(source)) continue
-
-        const lootHtml = lootIndex >= 0 && parts[lootIndex] ? parts[lootIndex].html : rows[rowIndex]
-        const candidates = new Map(
-          linkedItemsFromHtml(lootHtml).map((item) => [item.item_key, item.label])
-        )
-
-        if (!candidates.size && lootIndex >= 0 && parts[lootIndex]) {
-          for (const item of parseWikiDropLines(parts[lootIndex].text)) {
+        if (!candidateItems.size) {
+          for (const item of parseWikiDropLines(cell.text)) {
             const key = slugify(item)
             if (
               key &&
-              !/^(always|common|uncommon|rare|epic|legendary|coins?|gold|success|chance|xp|time)$/.test(key) &&
-              !/^\d+$/.test(key)
-            ) candidates.set(key, item)
+              !/^(always|common|uncommon|rare|epic|legendary|coins?|gold|success|chance|xp|time|qty|needs)$/.test(key) &&
+              !/^\d+(?:_\d+)?$/.test(key) &&
+              !/^\d+_\d+$/.test(key)
+            ) {
+              candidateItems.set(key, item)
+            }
           }
         }
+      }
 
-        for (const [itemKey, itemLabel] of candidates) {
-          actions.push({
-            action_key: 'wiki_thieving_' + slugify(source) + '_' + itemKey,
-            skill_key: 'thieving',
-            label: source,
-            min_level: level,
-            duration_ms: 0,
-            xp: 0,
-            amount: 1,
-            reward_item_key: itemKey,
-            reward_label: itemLabel,
-            image: null,
-            is_recipe: false,
-            category: source,
-            ingredients: [],
-          })
-        }
+      // Exclude tool/requirement links that can appear in the same action row.
+      const requirementHtml = headerCells
+        .map((header, index) => ({ header, index }))
+        .filter(({ header }) => header.includes('need') || header.includes('require') || header.includes('tool'))
+        .map(({ index }) => cells[index]?.html || '')
+        .join(' ')
+      const requirementKeys = new Set(linkedItemsFromHtml(requirementHtml).map((item) => item.item_key))
+
+      for (const [itemKey, itemLabel] of candidateItems) {
+        if (requirementKeys.has(itemKey)) continue
+
+        actions.push({
+          action_key: 'wiki_thieving_' + slugify(source) + '_' + itemKey,
+          skill_key: 'thieving',
+          label: source,
+          min_level: level,
+          duration_ms: 0,
+          xp: 0,
+          amount: 1,
+          reward_item_key: itemKey,
+          reward_label: itemLabel,
+          image: null,
+          is_recipe: false,
+          category: source,
+          ingredients: [],
+        })
       }
     }
 
@@ -434,12 +463,10 @@ async function syncThievingCatalogue(env) {
   if (!bestActions.length) {
     throw new HttpError(
       502,
-      'Could not read the Koruxa Thieving node table with its real level requirements.'
+      'Could not read the Koruxa Thieving All actions table with node levels and loot.'
     )
   }
 
-  // Remove stale rows from earlier broken imports so a cached Lv1/source=1
-  // record cannot survive beside the corrected catalogue.
   await env.DB.prepare("DELETE FROM skill_actions WHERE skill_key='thieving'").run()
   await storeOrderActions(env, bestActions)
   return bestActions
