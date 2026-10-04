@@ -240,27 +240,35 @@ export function normalizeSkills(value) {
         ''
       )
 
-      if (!key) return null
+      if (!key || !KORUXA_SKILL_KEYS.has(key)) return null
+
+      const level = Number(
+        entry?.level ??
+        entry?.current_level ??
+        entry?.skill_level ??
+        entry?.lvl ??
+        0
+      )
+      const xp = Number(
+        entry?.xp ??
+        entry?.current_xp ??
+        entry?.exact_xp ??
+        entry?.skill_xp ??
+        entry?.experience ??
+        entry?.total_xp ??
+        0
+      )
+
+      // Koruxa skill levels are capped at 150. Values above this are mastery,
+      // action counts, XP-derived values, or another skill-adjacent metric and
+      // must never be treated as a character skill level.
+      if (!Number.isFinite(level) || level < 0 || level > 150) return null
 
       return {
         ...entry,
         skill_key: key,
-        level: Number(
-          entry?.level ??
-          entry?.current_level ??
-          entry?.skill_level ??
-          entry?.lvl ??
-          0
-        ),
-        xp: Number(
-          entry?.xp ??
-          entry?.current_xp ??
-          entry?.exact_xp ??
-          entry?.skill_xp ??
-          entry?.experience ??
-          entry?.total_xp ??
-          0
-        ),
+        level,
+        xp: Number.isFinite(xp) && xp >= 0 ? xp : 0,
       }
     })
     .filter(Boolean)
@@ -308,50 +316,81 @@ export function extractSkillsFromMe(me) {
 
   const candidates = []
   const seen = new Set()
+  const SKILL_CONTAINER_KEYS = new Set([
+    'skills',
+    'skill_levels',
+    'skill_stats',
+    'skill_data',
+    'levels',
+  ])
+  const SKIP_BRANCHES = new Set([
+    'mastery',
+    'masteries',
+    'mastery_levels',
+    'mastery_data',
+    'research',
+    'farms',
+    'equipment',
+    'boss',
+    'event_stats',
+  ])
 
-  const inspect = (value, depth = 0) => {
+  const addCandidate = (value) => {
+    const normalized = normalizeSkills(value)
+      .filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
+    if (normalized.length) candidates.push(normalized)
+  }
+
+  const looksLikeSkillArray = (value) => {
+    if (!Array.isArray(value) || !value.length) return false
+    return value.some((entry) =>
+      entry &&
+      typeof entry === 'object' &&
+      (entry.skill_key != null || entry.skill != null || entry.skill_name != null || entry.key != null || entry.name != null) &&
+      (entry.level != null || entry.current_level != null || entry.skill_level != null || entry.lvl != null)
+    )
+  }
+
+  const inspect = (value, depth = 0, branch = '') => {
     if (!value || typeof value !== 'object' || depth > 5 || seen.has(value)) return
     seen.add(value)
 
+    const branchKey = canonicalSkillKey(branch)
+    if (SKIP_BRANCHES.has(branchKey) || branchKey.includes('mastery')) return
+
+    if (looksLikeSkillArray(value)) addCandidate(value)
+
     if (Array.isArray(value)) {
-      const normalized = normalizeSkills(value)
-      const recognized = normalized.filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
-      if (recognized.length) candidates.push(recognized)
-      for (const child of value.slice(0, 40)) inspect(child, depth + 1)
+      for (const child of value.slice(0, 40)) inspect(child, depth + 1, branch)
       return
     }
 
-    const entries = Object.entries(value)
-    const normalizedKeys = entries.map(([key]) => canonicalSkillKey(key))
-    const knownKeyCount = normalizedKeys.filter((key) => KORUXA_SKILL_KEYS.has(key)).length
-    if (knownKeyCount >= 3) {
-      const normalized = normalizeSkills(value).filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
-      if (normalized.length) candidates.push(normalized)
-    }
-
-    for (const [key, child] of entries) {
+    for (const [key, child] of Object.entries(value)) {
       const normalizedKey = canonicalSkillKey(key)
-      if (['skills','skill_levels','skill_stats','skill_data'].includes(normalizedKey)) {
-        const normalized = normalizeSkills(child).filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
-        if (normalized.length) candidates.push(normalized)
+      if (SKIP_BRANCHES.has(normalizedKey) || normalizedKey.includes('mastery')) continue
+
+      // Only interpret key/value maps as skills when Koruxa labels the
+      // container as skill data. This prevents mastery maps such as
+      // { cooking: 500, ... } from becoming impossible "skill levels".
+      if (SKILL_CONTAINER_KEYS.has(normalizedKey)) addCandidate(child)
+
+      if (depth < 5 && child && typeof child === 'object') {
+        inspect(child, depth + 1, normalizedKey)
       }
-      if (depth < 5 && child && typeof child === 'object') inspect(child, depth + 1)
     }
   }
 
   inspect(me)
 
-  // Koruxa can expose skill data in more than one block. Do not throw away a
-  // smaller block just because a larger one exists: merge every recognised
-  // skill and keep the most informative/non-zero version of each skill.
   const merged = new Map()
 
   for (const candidate of candidates) {
     for (const entry of candidate) {
       const key = canonicalSkillKey(entry.skill_key)
-      if (!KORUXA_SKILL_KEYS.has(key)) continue
+      const level = Number(entry.level || 0)
+      if (!KORUXA_SKILL_KEYS.has(key) || level < 0 || level > 150) continue
 
-      const normalized = { ...entry, skill_key: key }
+      const normalized = { ...entry, skill_key: key, level }
       const current = merged.get(key)
 
       if (!current) {
@@ -360,14 +399,13 @@ export function extractSkillsFromMe(me) {
       }
 
       const currentLevel = Number(current.level || 0)
-      const nextLevel = Number(normalized.level || 0)
       const currentXp = Number(current.xp || 0)
       const nextXp = Number(normalized.xp || 0)
 
       if (
-        nextLevel > currentLevel ||
-        (nextLevel === currentLevel && nextXp > currentXp) ||
-        (!currentLevel && nextLevel)
+        level > currentLevel ||
+        (level === currentLevel && nextXp > currentXp) ||
+        (!currentLevel && level)
       ) {
         merged.set(key, normalized)
       }
