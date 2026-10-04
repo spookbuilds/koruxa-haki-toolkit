@@ -3,6 +3,21 @@ import { getSkillActions } from '../lib/data'
 import { apiPost } from '../lib/api'
 import { itemEmoji, orderGroup } from '../data/orderVisuals'
 import type { SkillAction } from '../types'
+import smithingHeader from '../../assets/images/orders/smithing-header.png'
+import craftingHeader from '../../assets/images/orders/crafting-header.png'
+import fletchingHeader from '../../assets/images/orders/fletching-header.png'
+import jewelleryHeader from '../../assets/images/orders/jewellery-header.png'
+import potionsHeader from '../../assets/images/orders/potions-header.png'
+import farmingHeader from '../../assets/images/orders/farming-header.png'
+
+const orderHeaderImages: Record<string, string> = {
+  smithing: smithingHeader,
+  crafting: craftingHeader,
+  fletching: fletchingHeader,
+  jewelery: jewelleryHeader,
+  herblore: potionsHeader,
+  farming: farmingHeader,
+}
 
 type BasketLine = {
   id: string
@@ -216,7 +231,7 @@ export default function CatalogueOrderForm({
 
   return (
     <div className="catalogue-order-board">
-      <div className="board-heading catalogue-heading">
+      <div className="board-heading catalogue-heading board-heading-art" style={{ backgroundImage: `linear-gradient(90deg, rgba(8,17,30,.92), rgba(24,18,43,.60) 55%, rgba(8,14,24,.78)), url(${orderHeaderImages[skillKey]})` }}>
         <span>OFFICIAL KORUXA CATALOGUE</span>
         <h2>{title} Order Board</h2>
         <p>{subtitle ?? 'Choose an item, enter the amount, and the required crafting materials are shown automatically.'}</p>
