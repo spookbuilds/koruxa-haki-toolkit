@@ -1227,6 +1227,74 @@ async function handle(context) {
     return json({ success: true })
   }
 
+  if (parts[0] === 'admin' && parts[1] === 'users' && parts[2] && parts[3] === 'koruxa-token' && method === 'POST') {
+    await requireUser(context, OWNER_ROLES)
+    const targetId = String(parts[2])
+    const target = await env.DB.prepare('SELECT * FROM users WHERE id=? AND active=1').bind(targetId).first()
+    if (!target) throw new HttpError(404, 'Member account not found')
+
+    const body = await bodyJson(request)
+    const token = String(body.token || '').trim()
+    if (!token) throw new HttpError(400, 'Koruxa token is required')
+
+    const me = await fetchKoruxa('/me', token)
+    const state = await getClanState(env)
+    const members = state?.clan_json?.members
+    if (!Array.isArray(members) || !members.length) {
+      throw new HttpError(409, 'Sync the StrawHats clan roster before adding member API tokens')
+    }
+    const clanMember = members.find((member) => Number(member.character_id) === Number(me.id))
+    if (!clanMember) {
+      throw new HttpError(403, 'That API token belongs to ' + String(me.username || me.name || 'a character') + ', who is not currently in StrawHats [HAKI]')
+    }
+
+    const existing = await env.DB.prepare(
+      'SELECT id,discord_username,discord_global_name,koruxa_name FROM users WHERE koruxa_character_id=? AND id<>? AND active=1'
+    ).bind(Number(me.id), targetId).first()
+    if (existing) {
+      throw new HttpError(409, 'That Koruxa character is already connected to another HAKI Toolkit account')
+    }
+
+    if (target.koruxa_character_id != null && Number(target.koruxa_character_id) !== Number(me.id)) {
+      throw new HttpError(
+        409,
+        'This app account is already linked to ' + String(target.koruxa_name || 'another Koruxa character') + '. Remove or replace that connection deliberately before assigning a different member.'
+      )
+    }
+
+    const encrypted = await encryptKoruxaToken(env, token)
+    const now = nowIso()
+    await env.DB.prepare(
+      `INSERT INTO koruxa_tokens (user_id,token_ciphertext,token_iv,updated_at)
+       VALUES (?,?,?,?)
+       ON CONFLICT(user_id) DO UPDATE SET token_ciphertext=excluded.token_ciphertext,token_iv=excluded.token_iv,updated_at=excluded.updated_at`
+    ).bind(targetId, encrypted.ciphertext, encrypted.iv, now).run()
+
+    await writePlayerSnapshot(env, targetId, me)
+
+    return json({
+      success: true,
+      user_id: targetId,
+      username: me.username || me.name || clanMember.character,
+      character_id: Number(me.id),
+      connected: true,
+    })
+  }
+
+  if (parts[0] === 'admin' && parts[1] === 'users' && parts[2] && parts[3] === 'koruxa-token' && method === 'DELETE') {
+    await requireUser(context, OWNER_ROLES)
+    const targetId = String(parts[2])
+    const target = await env.DB.prepare('SELECT * FROM users WHERE id=? AND active=1').bind(targetId).first()
+    if (!target) throw new HttpError(404, 'Member account not found')
+
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM koruxa_tokens WHERE user_id=?').bind(targetId),
+      env.DB.prepare('UPDATE users SET koruxa_connected=0,last_koruxa_sync_at=NULL,updated_at=? WHERE id=?').bind(nowIso(), targetId),
+    ])
+
+    return json({ success: true, user_id: targetId, connected: false })
+  }
+
   if (parts[0] === 'admin' && parts[1] === 'users' && parts[2] && parts[3] === 'role' && method === 'PATCH') {
     await requireUser(context, OWNER_ROLES)
     const role = String((await bodyJson(request)).app_role || '')
