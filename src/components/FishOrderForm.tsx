@@ -1,9 +1,16 @@
-import { FormEvent, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { fishCatalogue, fishPrice } from '../data/orderForms'
 import { fishEmoji } from '../data/orderVisuals'
 import fishHeader from '../../assets/images/orders/fish-header.png'
+import { getSkillActions } from '../lib/data'
+import { apiPost } from '../lib/api'
+import SupplierOfferPanel, { type SupplierOfferOption } from './SupplierOfferPanel'
 
 type Line = { id: string; fish: string; preparation: 'raw' | 'cooked'; quantity: number; unitPrice: number }
+
+function fishOfferKey(name: string, preparation: 'raw' | 'cooked') {
+  return 'fish:' + preparation + ':' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
 
 export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string, payload: Record<string, unknown>) => Promise<void> }) {
   const [fish, setFish] = useState<string>(fishCatalogue[0].name)
@@ -11,6 +18,53 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
   const [quantity, setQuantity] = useState(1)
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<Line[]>([])
+  const [supplierOptions, setSupplierOptions] = useState<SupplierOfferOption[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadLevels = async () => {
+      try {
+        let actions = await getSkillActions()
+        const hasFishing = actions.some((action) => action.skill_key === 'fishing')
+        const hasCooking = actions.some((action) => action.skill_key === 'cooking')
+        if (!hasFishing) await apiPost('/api/catalog/wiki-sync', { skill_key: 'fishing' })
+        if (!hasCooking) await apiPost('/api/catalog/wiki-sync', { skill_key: 'cooking' })
+        if (!hasFishing || !hasCooking) actions = await getSkillActions()
+
+        if (cancelled) return
+        const options: SupplierOfferOption[] = []
+        for (const entry of fishCatalogue) {
+          for (const prep of ['raw','cooked'] as const) {
+            const wanted = (prep === 'raw' ? entry.name : 'Cooked ' + entry.name).toLowerCase()
+            const skillKey = prep === 'raw' ? 'fishing' : 'cooking'
+            const match = actions.find((action) =>
+              action.skill_key === skillKey &&
+              (
+                action.reward_label.toLowerCase() === wanted ||
+                action.reward_label.toLowerCase().replace(/^raw\s+/,'') === entry.name.toLowerCase() ||
+                (prep === 'cooked' && action.reward_label.toLowerCase().includes(entry.name.toLowerCase()))
+              )
+            )
+            options.push({
+              key: fishOfferKey(entry.name, prep),
+              label: (prep === 'raw' ? 'Raw ' : 'Cooked ') + entry.name,
+              group: prep === 'raw' ? 'Raw Fish' : 'Cooked Fish',
+              skillKey,
+              minLevel: match ? Number(match.min_level || 1) : null,
+            })
+          }
+        }
+        setSupplierOptions(options)
+      } catch {
+        setSupplierOptions(fishCatalogue.flatMap((entry) => ([
+          { key: fishOfferKey(entry.name,'raw'), label: 'Raw ' + entry.name, group: 'Raw Fish', skillKey: 'fishing', minLevel: null },
+          { key: fishOfferKey(entry.name,'cooked'), label: 'Cooked ' + entry.name, group: 'Cooked Fish', skillKey: 'cooking', minLevel: null },
+        ])))
+      }
+    }
+    loadLevels()
+    return () => { cancelled = true }
+  }, [])
 
   const total = useMemo(() => lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0), [lines])
 
@@ -30,6 +84,7 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
       unit_price: line.unitPrice,
       line_total: line.quantity * line.unitPrice,
       emoji: fishEmoji[line.fish] ?? '🐟',
+      offer_key: fishOfferKey(line.fish, line.preparation),
       description: (fishEmoji[line.fish] ?? '🐟') + ' ' + line.quantity.toLocaleString() + ' × ' + (line.preparation === 'raw' ? 'Raw ' : 'Cooked ') + line.fish,
     }))
     await onSubmit('Fish order · ' + total.toLocaleString() + ' GP', {
@@ -85,6 +140,13 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
             <button className="exchange-add" type="button" onClick={add}>+ Add fish</button>
           </div>
         </div>
+
+        <SupplierOfferPanel
+          categoryId="fish"
+          options={supplierOptions}
+          selectedKey={fishOfferKey(fish, preparation)}
+          basketKeys={lines.map((line) => fishOfferKey(line.fish, line.preparation))}
+        />
 
         <div className="order-preview-board">
           <div className="order-preview-title"><span>LIVE ORDER PREVIEW</span><strong>{lines.length} item{lines.length === 1 ? '' : 's'}</strong></div>
