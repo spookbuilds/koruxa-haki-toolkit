@@ -167,7 +167,7 @@ export default function FishOrderForm({ onSubmit }: { onSubmit: (summary: string
                 <button type="button" onClick={() => setLines((current) => current.filter((entry) => entry.id !== line.id))}>Remove</button>
               </div>
             </div>
-          )) : <p className="empty">Click a fish above and add it to the order.</p>}
+          )) : <p className="empty">No fish added yet. Choose one above to start your order.</p>}
           {lines.length ? <div className="flash-total"><span>ORDER TOTAL</span><strong>{total.toLocaleString()} GP</strong></div> : null}
         </div>
 
