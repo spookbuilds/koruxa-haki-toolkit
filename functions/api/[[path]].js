@@ -40,6 +40,23 @@ function bool(value) {
 }
 
 const WIKI_ORDER_SKILLS = new Set(['smithing','crafting','fletching','jewelery','herblore','farming'])
+const PLANNER_SKILLS = [
+  'woodcutting',
+  'mining',
+  'fishing',
+  'cooking',
+  'smithing',
+  'crafting',
+  'fletching',
+  'jewelery',
+  'herblore',
+  'arcana',
+  'firemaking',
+  'alchemy',
+  'construction',
+  'tinkering',
+]
+const WIKI_SKILLS = new Set([...PLANNER_SKILLS, ...WIKI_ORDER_SKILLS])
 
 function decodeHtml(value) {
   return String(value || '')
@@ -134,7 +151,8 @@ function parseWikiSkillPage(html, skillKey) {
     const makesText = cells[5]
     if (!actionLabel || !makesText || makesText === '—') continue
 
-    const made = parseWikiQuantityLabel(makesText.split('\n')[0])
+    const madeText = makesText.split('\n')[0].replace(/Burn:.*$/i, '').trim()
+    const made = parseWikiQuantityLabel(madeText)
     if (!made.label) continue
     const ingredients = parseWikiIngredients(cells[6])
     const actionKey = 'wiki_' + skillKey + '_' + slugify(actionLabel)
@@ -176,7 +194,7 @@ function parseWikiSkillPage(html, skillKey) {
 }
 
 async function syncWikiSkill(env, skillKey) {
-  if (!WIKI_ORDER_SKILLS.has(skillKey)) throw new HttpError(400, 'That Koruxa skill is not an order catalogue skill')
+  if (!WIKI_SKILLS.has(skillKey)) throw new HttpError(400, 'That Koruxa skill is not supported by the planner catalogue')
   const response = await fetch('https://koruxa.com/wiki/skills/' + skillKey + '.html', {
     headers: { Accept: 'text/html', 'User-Agent': 'HAKI-Toolkit/1.0' },
   })
@@ -204,6 +222,137 @@ async function syncWikiSkill(env, skillKey) {
     )))
   }
   return actions
+}
+
+
+async function syncXpTableFromWiki(env) {
+  const response = await fetch('https://koruxa.com/wiki/xp.html', {
+    headers: { Accept: 'text/html', 'User-Agent': 'HAKI-Toolkit/1.0' },
+  })
+  if (!response.ok) throw new HttpError(502, 'Koruxa XP table returned ' + response.status)
+
+  const html = await response.text()
+  const rowMatches = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+  const levels = new Map()
+
+  for (const rowHtml of rowMatches) {
+    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+      .map((match) => htmlCellText(match[1]))
+    if (cells.length < 2) continue
+    const level = Number.parseInt(String(cells[0]).replace(/[^0-9]/g, ''), 10)
+    const totalXp = Number(String(cells[1]).replace(/[^0-9]/g, ''))
+    if (!Number.isFinite(level) || level < 1 || level > 150 || !Number.isFinite(totalXp)) continue
+    levels.set(level, totalXp)
+  }
+
+  if (levels.size < 100) throw new HttpError(502, 'Could not read the Koruxa XP table')
+
+  const xpTable = Array(151).fill(0)
+  for (const [level, totalXp] of levels.entries()) xpTable[level] = totalXp
+
+  await env.DB.prepare(
+    `INSERT INTO app_settings (key,value_json,updated_by,updated_at)
+     VALUES ('xp_table',?,NULL,?)
+     ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`,
+  ).bind(JSON.stringify(xpTable), nowIso()).run()
+
+  return xpTable
+}
+
+async function linkCatalogIngredients(env) {
+  const { results } = await env.DB.prepare(
+    'SELECT action_key,skill_key,reward_item_key,ingredients_json FROM skill_actions'
+  ).all()
+
+  const producerByItem = new Map()
+  for (const row of results) {
+    if (!row.reward_item_key) continue
+    const current = producerByItem.get(String(row.reward_item_key))
+    const preferred = String(row.action_key).startsWith('wiki_')
+    if (!current || preferred) {
+      producerByItem.set(String(row.reward_item_key), {
+        action_key: String(row.action_key),
+        skill_key: String(row.skill_key),
+      })
+    }
+  }
+
+  const updates = []
+  for (const row of results) {
+    const ingredients = parseJson(row.ingredients_json, [])
+    if (!Array.isArray(ingredients) || !ingredients.length) continue
+
+    const linked = ingredients.map((ingredient) => {
+      const producer = producerByItem.get(String(ingredient.item_key || ''))
+      return {
+        ...ingredient,
+        src_skill: producer?.skill_key,
+        src_action: producer?.action_key,
+      }
+    })
+
+    updates.push(
+      env.DB.prepare('UPDATE skill_actions SET ingredients_json=? WHERE action_key=?')
+        .bind(JSON.stringify(linked), row.action_key)
+    )
+  }
+
+  for (let i = 0; i < updates.length; i += 75) {
+    await env.DB.batch(updates.slice(i, i + 75))
+  }
+}
+
+async function ensurePlannerData(env, force = false) {
+  const syncRow = await env.DB.prepare(
+    "SELECT value_json,updated_at FROM app_settings WHERE key='planner_catalog_sync'"
+  ).first()
+
+  const lastSync = syncRow?.updated_at ? new Date(syncRow.updated_at).getTime() : 0
+  const fresh = lastSync && Date.now() - lastSync < 24 * 60 * 60 * 1000
+
+  const xpRow = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='xp_table'").first()
+  const xpTable = parseJson(xpRow?.value_json, [])
+
+  if (!force && fresh && Array.isArray(xpTable) && xpTable.length >= 151) {
+    return parseJson(syncRow?.value_json, { synced: [], failures: [] })
+  }
+
+  const synced = []
+  const failures = []
+
+  for (const skillKey of PLANNER_SKILLS) {
+    try {
+      const actions = await syncWikiSkill(env, skillKey)
+      synced.push({ skill_key: skillKey, actions: actions.length })
+    } catch (error) {
+      failures.push({
+        skill_key: skillKey,
+        error: error instanceof Error ? error.message : 'Unknown wiki sync error',
+      })
+    }
+  }
+
+  let xpLevels = 0
+  try {
+    const table = await syncXpTableFromWiki(env)
+    xpLevels = table.length - 1
+  } catch (error) {
+    failures.push({
+      skill_key: 'xp_table',
+      error: error instanceof Error ? error.message : 'Unknown XP table error',
+    })
+  }
+
+  await linkCatalogIngredients(env)
+
+  const result = { synced, failures, xp_levels: xpLevels }
+  await env.DB.prepare(
+    `INSERT INTO app_settings (key,value_json,updated_by,updated_at)
+     VALUES ('planner_catalog_sync',?,NULL,?)
+     ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`,
+  ).bind(JSON.stringify(result), nowIso()).run()
+
+  return result
 }
 
 async function getClanState(env) {
@@ -646,6 +795,13 @@ async function handle(context) {
 
   if (method === 'GET' && joined === 'leaderboards') return handleLeaderboards(context)
 
+  if (method === 'POST' && joined === 'planner/bootstrap') {
+    await requireClanUser(context)
+    const body = await bodyJson(request)
+    const result = await ensurePlannerData(env, Boolean(body.force))
+    return json({ success: true, ...result })
+  }
+
   if (method === 'GET' && joined === 'catalog') {
     await requireClanUser(context)
     const { results } = await env.DB.prepare('SELECT * FROM skill_actions ORDER BY skill_key,min_level,action_key').all()
@@ -670,8 +826,14 @@ async function handle(context) {
 
   if (method === 'GET' && joined === 'xp-table') {
     await requireClanUser(context)
-    const row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='xp_table'").first()
-    return json({ xp_table: parseJson(row?.value_json, []) })
+    let row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='xp_table'").first()
+    let table = parseJson(row?.value_json, [])
+    if (!Array.isArray(table) || table.length < 151) {
+      await ensurePlannerData(env)
+      row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key='xp_table'").first()
+      table = parseJson(row?.value_json, [])
+    }
+    return json({ xp_table: table })
   }
 
   if (method === 'POST' && joined === 'catalog/wiki-sync') {
