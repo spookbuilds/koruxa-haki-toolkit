@@ -2492,3 +2492,16 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     flex-wrap: wrap;
   }
 }
+
+
+.shop-owner-admin-card {
+  min-width: 0;
+}
+.shop-owner-admin-list {
+  display: block;
+  margin-top: 7px !important;
+  padding-top: 7px;
+  border-top: 1px solid #2b2334;
+  color: #b9a7c7 !important;
+  line-height: 1.35;
+}
