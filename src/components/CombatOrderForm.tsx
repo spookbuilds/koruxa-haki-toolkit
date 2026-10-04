@@ -224,7 +224,6 @@ export default function CombatOrderForm({
 
   const managerResults = monsterIndex
     .filter((monster) => !managerSearch || monster.name.toLowerCase().includes(managerSearch.toLowerCase()))
-    .slice(0, 80)
 
   return (
     <div className="catalogue-order-board combat-order-board">
