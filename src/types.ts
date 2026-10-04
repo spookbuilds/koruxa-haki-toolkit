@@ -1,4 +1,5 @@
 export type AppRole = 'owner' | 'officer' | 'member'
+export type AccessRole = AppRole | 'outsider'
 export type OrderStatus = 'open' | 'claimed' | 'in_progress' | 'ready' | 'collected' | 'cancelled'
 
 export interface SkillStat {
@@ -62,6 +63,7 @@ export interface Profile {
   koruxa_character_id: number | null
   koruxa_name: string | null
   app_role: AppRole
+  access_role?: AccessRole
   discord_user_id: string | null
   discord_username?: string | null
   discord_global_name?: string | null
