@@ -336,6 +336,9 @@ async function ensurePlannerData(env, force = false) {
   const xpTable = parseJson(xpRow?.value_json, [])
 
   if (!force && fresh && Array.isArray(xpTable) && xpTable.length >= 151) {
+    // Re-link cached ingredients on every planner bootstrap so dependency-linking
+    // fixes take effect immediately without waiting for the 24h wiki refresh.
+    await linkCatalogIngredients(env)
     return parseJson(syncRow?.value_json, { synced: [], failures: [] })
   }
 
