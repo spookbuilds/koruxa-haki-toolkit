@@ -2085,6 +2085,7 @@ async function handle(context) {
       ).bind(userId, categoryId, actor.id, nowIso()).run()
     } else {
       await ensureOrderSupplierStatus(env)
+      await ensureOrderSupplierOffers(env)
       await env.DB.batch([
         env.DB.prepare('DELETE FROM fulfilment_permissions WHERE user_id=? AND category_id=?').bind(userId, categoryId),
         env.DB.prepare('DELETE FROM order_supplier_status WHERE user_id=? AND category_id=?').bind(userId, categoryId),
