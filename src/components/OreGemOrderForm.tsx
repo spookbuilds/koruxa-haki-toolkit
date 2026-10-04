@@ -1,6 +1,7 @@
 import { FormEvent, useMemo, useState } from 'react'
 import { ORE_GEM_ITEM_CAP, oreGemMaterials, requiredOreForGems } from '../data/orderForms'
 import { materialEmoji } from '../data/orderVisuals'
+import oreGemHeader from '../../assets/images/orders/ore-gem-header.png'
 
 type Basket = Record<string, { extraOre: number; gems: number }>
 
@@ -91,7 +92,7 @@ export default function OreGemOrderForm({ onSubmit }: { onSubmit: (summary: stri
   return (
     <form className="flash-order-layout" onSubmit={submit}>
       <div className="order-board-main">
-        <div className="board-heading ore-heading">
+        <div className="board-heading ore-heading board-heading-art" style={{ backgroundImage: `linear-gradient(90deg, rgba(8,20,38,.92), rgba(35,19,67,.58) 55%, rgba(38,22,12,.72)), url(${oreGemHeader})` }}>
           <span>KORUXA • HAKI MARKET</span>
           <h2>Ore & Uncut Gem Price Board</h2>
           <p>Click a material tier, choose ore or an uncut gem, and matching ore is calculated automatically.</p>
