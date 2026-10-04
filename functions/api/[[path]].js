@@ -609,7 +609,6 @@ async function orderSuppliers(env, currentUserId = null) {
 
 async function canFulfil(env, user, categoryId) {
   if (!user.clan_verified && user.app_role !== 'owner') return false
-  if (OFFICER_ROLES.includes(user.app_role)) return true
   const row = await env.DB.prepare(
     'SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id=?',
   ).bind(user.id, categoryId).first()
