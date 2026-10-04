@@ -1594,12 +1594,14 @@ async function handle(context) {
        ON CONFLICT(user_id) DO UPDATE SET token_ciphertext=excluded.token_ciphertext,token_iv=excluded.token_iv,updated_at=excluded.updated_at`,
     ).bind(user.id, encrypted.ciphertext, encrypted.iv, now).run()
     await writePlayerSnapshot(env, user.id, me)
+    await quietlyRefreshLeaderboardDiscord(env)
     return json({ success: true, username: me.username, character_id: me.id })
   }
 
   if (method === 'POST' && joined === 'koruxa/sync-me') {
     const user = await requireUser(context)
     const me = await syncOneUser(env, user.id)
+    await quietlyRefreshLeaderboardDiscord(env)
     return json({ success: true, username: me.username })
   }
 
@@ -1644,6 +1646,8 @@ async function handle(context) {
         })
       })
     }
+
+    await quietlyRefreshLeaderboardDiscord(env)
 
     return json({
       success: failures.length === 0,
@@ -1723,6 +1727,35 @@ async function handle(context) {
         updated_at: privateRow.updated_at,
       } : null,
     })
+  }
+
+  if (method === 'GET' && joined === 'admin/leaderboard-discord') {
+    await requireUser(context, OFFICER_ROLES)
+    const config = await leaderboardDiscordConfig(env)
+    return json({ config })
+  }
+
+  if (method === 'PUT' && joined === 'admin/leaderboard-discord') {
+    const user = await requireUser(context, OFFICER_ROLES)
+    const body = await bodyJson(request)
+    const channelId = String(body.channel_id || '').trim().replace(/^<#(\d+)>$/, '$1')
+
+    if (channelId && !/^\d{15,25}$/.test(channelId)) {
+      throw new HttpError(400, 'Discord channel ID must be the numeric channel ID copied from Discord')
+    }
+
+    const current = await leaderboardDiscordConfig(env)
+    const next = {
+      channel_id: channelId,
+      message_id: channelId && channelId === String(current?.channel_id || '') ? String(current?.message_id || '') : '',
+    }
+    await saveLeaderboardDiscordConfig(env, next, user.id)
+    return json({ success: true, config: next })
+  }
+
+  if (method === 'POST' && joined === 'admin/leaderboard-discord/publish') {
+    const user = await requireUser(context, OFFICER_ROLES)
+    return json(await refreshLeaderboardDiscord(env, user.id))
   }
 
   if (method === 'GET' && joined === 'leaderboards') return handleLeaderboards(context)
