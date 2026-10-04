@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import type { Profile } from '../types'
 
-const links = [
+const clanLinks = [
   ['/', 'Clan Home'],
   ['/members', 'Members'],
   ['/leaderboards', 'Leaderboards'],
@@ -12,13 +12,20 @@ const links = [
   ['/admin', 'Admin'],
 ] as const
 
+const outsiderLinks = [
+  ['/orders', 'Orders'],
+] as const
+
 export default function Shell({ profile, onSignOut, children }: { profile: Profile | null; onSignOut: () => void; children: React.ReactNode }) {
+  const outsider = profile?.access_role === 'outsider' || (!profile?.clan_verified && profile?.app_role !== 'owner')
+  const links = outsider ? outsiderLinks : clanLinks
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">H</div>
-          <div><strong>HAKI Toolkit</strong><span>Koruxa clan companion</span></div>
+          <div><strong>HAKI Toolkit</strong><span>{outsider ? 'StrawHats order exchange' : 'Koruxa clan companion'}</span></div>
         </div>
         <nav>
           {links.map(([to, label]) => (
@@ -29,8 +36,8 @@ export default function Shell({ profile, onSignOut, children }: { profile: Profi
         </nav>
         <div className="sidebar-footer">
           <div className="user-chip">
-            <strong>{profile?.koruxa_name ?? profile?.display_name ?? 'Demo user'}</strong>
-            <span>{profile?.app_role ?? 'member'}</span>
+            <strong>{profile?.koruxa_name ?? profile?.display_name ?? 'Discord user'}</strong>
+            <span>{outsider ? 'Outsider' : profile?.app_role ?? 'member'}</span>
           </div>
           <button className="ghost-button" onClick={onSignOut}>Sign out</button>
         </div>
