@@ -18,6 +18,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   const [apiMember, setApiMember] = useState('')
   const [memberApiToken, setMemberApiToken] = useState('')
   const [apiBusy, setApiBusy] = useState(false)
+  const [syncBusy, setSyncBusy] = useState<string | null>(null)
 
   const refresh = async () => {
     const [profileRows, categoryRows, watchRows, clanState] = await Promise.all([
@@ -132,13 +133,35 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
 
   const sync = async (action: 'sync-me' | 'sync-clan' | 'sync-all-members') => {
     try {
-      setMessage('Syncing…')
-      const result = await invokeKoruxa(action)
-      setMessage('Sync complete: ' + JSON.stringify(result))
+      setSyncBusy(action)
+      setMessage(action === 'sync-all-members' ? 'Syncing connected members…' : action === 'sync-clan' ? 'Syncing clan and bank…' : 'Syncing your Koruxa profile…')
+      const result: any = await invokeKoruxa(action)
+
+      if (action === 'sync-all-members') {
+        const failures = Array.isArray(result?.failures) ? result.failures : []
+        const synced = Number(result?.synced ?? 0)
+        const attempted = Number(result?.attempted ?? synced + failures.length)
+        const noSkills = Array.isArray(result?.members) ? result.members.filter((member: any) => Number(member.skill_count ?? 0) === 0) : []
+
+        const detail = [
+          synced + ' / ' + attempted + ' members synced.',
+          failures.length ? ' Failed: ' + failures.map((entry: any) => (entry.member ?? 'Member') + ' — ' + entry.error).join(' | ') : '',
+          noSkills.length ? ' No skill data detected for: ' + noSkills.map((entry: any) => entry.member).join(', ') + '.' : '',
+        ].join('')
+
+        setMessage(detail)
+      } else if (action === 'sync-clan') {
+        setMessage('Clan sync complete. Members: ' + (result?.members ?? '—') + ' · Bank items: ' + (result?.item_count ?? '—') + '.')
+      } else {
+        setMessage('Your Koruxa profile synced successfully.')
+      }
+
       await onProfileChanged()
       await refresh()
     } catch (error: any) {
       setMessage(error.message ?? 'Sync failed.')
+    } finally {
+      setSyncBusy(null)
     }
   }
 
@@ -153,6 +176,26 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       await refresh()
     } catch (error: any) {
       setMessage(error.message ?? 'Could not connect member API.')
+    } finally {
+      setApiBusy(false)
+    }
+  }
+
+  const syncSelectedMemberApi = async () => {
+    if (!apiMember) return
+    try {
+      setApiBusy(true)
+      const selected = profiles.find((profile) => profile.id === apiMember)
+      setMessage('Syncing ' + (selected?.koruxa_name ?? selected?.display_name ?? 'member') + '…')
+      const result: any = await apiPost('/api/admin/users/' + apiMember + '/sync-koruxa')
+      setMessage(
+        'Synced ' + (result.member ?? 'member') + '. ' +
+        Number(result.skill_count ?? 0) + ' skills detected' +
+        (Number(result.skill_count ?? 0) === 0 ? ' — the Koruxa response contained no readable skill block.' : '.')
+      )
+      await refresh()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not sync member API.')
     } finally {
       setApiBusy(false)
     }
@@ -238,7 +281,10 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
               {apiBusy ? 'Working…' : profiles.find((profile) => profile.id === apiMember)?.koruxa_connected ? 'Replace API token' : 'Add API token'}
             </button>
             {profiles.find((profile) => profile.id === apiMember)?.koruxa_connected
-              ? <button className="ghost-button" type="button" disabled={apiBusy} onClick={removeMemberApi}>Remove saved token</button>
+              ? <>
+                  <button className="secondary-button" type="button" disabled={apiBusy} onClick={syncSelectedMemberApi}>Sync this member</button>
+                  <button className="ghost-button" type="button" disabled={apiBusy} onClick={removeMemberApi}>Remove saved token</button>
+                </>
               : null}
           </div>
         </div>
@@ -261,9 +307,9 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       <section className="panel">
         <div className="panel-title"><div><h2>Koruxa sync</h2><p className="muted">Clan sync uses the server-side clan token. Member sync uses each member's encrypted personal token.</p></div></div>
         <div className="button-row">
-          <button className="primary-button" onClick={() => sync('sync-me')}>Sync me</button>
-          <button className="secondary-button" onClick={() => sync('sync-clan')}>Sync clan + bank</button>
-          <button className="secondary-button" onClick={() => sync('sync-all-members')}>Sync connected members</button>
+          <button className="primary-button" disabled={Boolean(syncBusy)} onClick={() => sync('sync-me')}>{syncBusy === 'sync-me' ? 'Syncing…' : 'Sync me'}</button>
+          <button className="secondary-button" disabled={Boolean(syncBusy)} onClick={() => sync('sync-clan')}>{syncBusy === 'sync-clan' ? 'Syncing…' : 'Sync clan + bank'}</button>
+          <button className="secondary-button" disabled={Boolean(syncBusy)} onClick={() => sync('sync-all-members')}>{syncBusy === 'sync-all-members' ? 'Syncing members…' : 'Sync connected members'}</button>
         </div>
       </section>
 
