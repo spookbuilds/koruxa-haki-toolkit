@@ -11,6 +11,7 @@ import {
   json,
   latestSnapshots,
   nowIso,
+  normalizeSkills,
   oauthStateCookie,
   parseCookies,
   parseJson,
@@ -1085,6 +1086,36 @@ async function ensureOrderSupplierStatus(env) {
   ).run()
 }
 
+async function ensureOrderSupplierOffers(env) {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS order_supplier_offers (
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      category_id TEXT NOT NULL REFERENCES order_categories(id) ON DELETE CASCADE,
+      offer_key TEXT NOT NULL,
+      offer_label TEXT NOT NULL,
+      skill_key TEXT,
+      min_level INTEGER,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (user_id, category_id, offer_key)
+    )`
+  ).run()
+}
+
+function supplierSkillLevel(skills, skillKey) {
+  const wanted = String(skillKey || '').trim().toLowerCase()
+  if (!wanted) return null
+  const aliases = {
+    jewellery: 'jewelery',
+    runecrafting: 'arcana',
+    rune_crafting: 'arcana',
+    runecraft: 'arcana',
+    arcane: 'arcana',
+  }
+  const canonical = aliases[wanted] || wanted
+  const row = normalizeSkills(skills).find((entry) => String(entry.skill_key) === canonical)
+  return row ? Number(row.level || 0) : null
+}
+
 async function orderSuppliers(env, currentUserId = null) {
   await ensureOrderSupplierStatus(env)
   const { results } = await env.DB.prepare(
@@ -1108,6 +1139,69 @@ async function orderSuppliers(env, currentUserId = null) {
     updated_at: row.status_updated_at || null,
     is_self: currentUserId ? row.user_id === currentUserId : false,
   }))
+}
+
+async function supplierOfferRows(env, categoryId, currentUserId) {
+  await ensureOrderSupplierStatus(env)
+  await ensureOrderSupplierOffers(env)
+
+  const { results: supplierRows } = await env.DB.prepare(
+    `SELECT fp.user_id,
+            COALESCE(u.koruxa_name,u.display_name,u.discord_global_name,u.discord_username,'Clan member') AS member_name,
+            COALESCE(s.status,'available') AS supplier_status,
+            (
+              SELECT ms.skills_json
+              FROM member_snapshots ms
+              WHERE ms.user_id=fp.user_id
+              ORDER BY ms.captured_at DESC
+              LIMIT 1
+            ) AS skills_json
+       FROM fulfilment_permissions fp
+       JOIN users u ON u.id=fp.user_id
+       LEFT JOIN order_supplier_status s
+         ON s.user_id=fp.user_id AND s.category_id=fp.category_id
+      WHERE fp.category_id=? AND u.active=1
+      ORDER BY member_name`
+  ).bind(categoryId).all()
+
+  const { results: offerRows } = await env.DB.prepare(
+    `SELECT user_id,offer_key,offer_label,skill_key,min_level
+       FROM order_supplier_offers
+      WHERE category_id=?
+      ORDER BY offer_label`
+  ).bind(categoryId).all()
+
+  const offersByUser = new Map()
+  for (const row of offerRows) {
+    if (!offersByUser.has(row.user_id)) offersByUser.set(row.user_id, [])
+    offersByUser.get(row.user_id).push(row)
+  }
+
+  return supplierRows.map((row) => {
+    const skills = parseJson(row.skills_json, [])
+    const offers = (offersByUser.get(row.user_id) || []).map((offer) => {
+      const minLevel = offer.min_level == null ? null : Number(offer.min_level)
+      const level = offer.skill_key ? supplierSkillLevel(skills, offer.skill_key) : null
+      const eligible = !offer.skill_key || minLevel == null || (level != null && level >= minLevel)
+
+      return {
+        key: offer.offer_key,
+        label: offer.offer_label,
+        skill_key: offer.skill_key || null,
+        min_level: minLevel,
+        eligible,
+        current_level: row.user_id === currentUserId ? level : null,
+      }
+    })
+
+    return {
+      profile_id: row.user_id,
+      name: row.member_name,
+      status: row.supplier_status === 'busy' ? 'busy' : 'available',
+      is_self: row.user_id === currentUserId,
+      offers,
+    }
+  })
 }
 
 async function canFulfil(env, user, categoryId) {
