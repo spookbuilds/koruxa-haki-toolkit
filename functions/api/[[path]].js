@@ -4,6 +4,7 @@ import {
   clearSessionCookie,
   decryptKoruxaToken,
   encryptKoruxaToken,
+  extractKoruxaMe,
   extractSkillsFromMe,
   fetchKoruxa,
   hmacHex,
@@ -451,7 +452,8 @@ async function syncOneUser(env, userId) {
   const tokenRow = await env.DB.prepare('SELECT * FROM koruxa_tokens WHERE user_id=?').bind(userId).first()
   if (!tokenRow) throw new HttpError(400, 'Connect your Koruxa token first')
   const token = await decryptKoruxaToken(env, tokenRow.token_ciphertext, tokenRow.token_iv)
-  const me = await fetchKoruxa('/me', token)
+  const raw = await fetchKoruxa('/me', token)
+  const me = extractKoruxaMe(raw)
   await writePlayerSnapshot(env, userId, me)
   return me
 }
@@ -768,7 +770,7 @@ async function handle(context) {
     const body = await bodyJson(request)
     const token = String(body.token || '').trim()
     if (!token) throw new HttpError(400, 'Koruxa token is required')
-    const me = await fetchKoruxa('/me', token)
+    const me = extractKoruxaMe(await fetchKoruxa('/me', token))
     await verifyClanMembership(env, user, me)
     const encrypted = await encryptKoruxaToken(env, token)
     const now = nowIso()
@@ -801,31 +803,41 @@ async function handle(context) {
         ORDER BY member_name`
     ).all()
 
-    let synced = 0
     const members = []
     const failures = []
+    const concurrency = 4
 
-    for (const row of results) {
-      try {
+    for (let i = 0; i < results.length; i += concurrency) {
+      const chunk = results.slice(i, i + concurrency)
+      const settled = await Promise.allSettled(chunk.map(async (row) => {
         const me = await syncOneUser(env, row.user_id)
         const skills = extractSkillsFromMe(me)
-        synced += 1
-        members.push({
+        return {
           user_id: row.user_id,
           member: me.username || me.name || row.member_name,
           skill_count: skills.length,
           skills: skills.map((entry) => entry.skill_key),
-        })
-      } catch (error) {
-        failures.push({
+        }
+      }))
+
+      settled.forEach((result, index) => {
+        const row = chunk[index]
+        if (result.status === 'fulfilled') members.push(result.value)
+        else failures.push({
           user_id: row.user_id,
           member: row.member_name,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason || 'Unknown error'),
         })
-      }
+      })
     }
 
-    return json({ success: true, synced, members, failures })
+    return json({
+      success: failures.length === 0,
+      synced: members.length,
+      attempted: results.length,
+      members,
+      failures,
+    })
   }
 
   if (method === 'GET' && joined === 'clan/state') {
@@ -1252,6 +1264,24 @@ async function handle(context) {
     return json({ success: true })
   }
 
+  if (parts[0] === 'admin' && parts[1] === 'users' && parts[2] && parts[3] === 'sync-koruxa' && method === 'POST') {
+    await requireUser(context, OFFICER_ROLES)
+    const targetId = String(parts[2])
+    const target = await env.DB.prepare(
+      'SELECT id,COALESCE(koruxa_name,display_name,discord_global_name,discord_username,id) AS member_name FROM users WHERE id=? AND active=1'
+    ).bind(targetId).first()
+    if (!target) throw new HttpError(404, 'Member account not found')
+
+    const me = await syncOneUser(env, targetId)
+    const skills = extractSkillsFromMe(me)
+    return json({
+      success: true,
+      member: me.username || me.name || target.member_name,
+      skill_count: skills.length,
+      skills: skills.map((entry) => entry.skill_key),
+    })
+  }
+
   if (parts[0] === 'admin' && parts[1] === 'users' && parts[2] && parts[3] === 'koruxa-token' && method === 'POST') {
     await requireUser(context, OWNER_ROLES)
     const targetId = String(parts[2])
@@ -1262,7 +1292,7 @@ async function handle(context) {
     const token = String(body.token || '').trim()
     if (!token) throw new HttpError(400, 'Koruxa token is required')
 
-    const me = await fetchKoruxa('/me', token)
+    const me = extractKoruxaMe(await fetchKoruxa('/me', token))
     const state = await getClanState(env)
     const members = state?.clan_json?.members
     if (!Array.isArray(members) || !members.length) {
