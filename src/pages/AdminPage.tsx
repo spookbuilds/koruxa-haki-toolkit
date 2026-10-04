@@ -8,24 +8,29 @@ import type { AppRole, OrderCategory, Profile } from '../types'
 export default function AdminPage({ currentProfile, onProfileChanged }: { currentProfile: Profile; onProfileChanged: () => void }) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [watch, setWatch] = useState<any[]>([])
+  const [bankItems, setBankItems] = useState<any[]>([])
   const [categories, setCategories] = useState<OrderCategory[]>([])
   const [permissions, setPermissions] = useState<Array<{ profile_id: string; category_id: string }>>([])
   const [permissionMember, setPermissionMember] = useState('')
-  const [itemKey, setItemKey] = useState('')
-  const [displayName, setDisplayName] = useState('')
+  const [bankItemName, setBankItemName] = useState('')
   const [minimum, setMinimum] = useState(0)
   const [preferred, setPreferred] = useState(0)
   const [message, setMessage] = useState('')
 
   const refresh = async () => {
-    const [profileRows, categoryRows, watchRows] = await Promise.all([
+    const [profileRows, categoryRows, watchRows, clanState] = await Promise.all([
       getProfiles(),
       getOrderCategories(),
       apiGet<{ watch: any[] }>('/api/bank/watch'),
+      apiGet<{ state: any }>('/api/clan/state'),
     ])
     setProfiles(profileRows)
     setCategories(categoryRows)
     setWatch(watchRows.watch ?? [])
+    setBankItems(
+      [...(clanState.state?.bank_json?.items ?? [])]
+        .sort((a: any, b: any) => String(a.name ?? '').localeCompare(String(b.name ?? '')))
+    )
     if (!permissionMember && profileRows[0]) setPermissionMember(profileRows[0].id)
 
     if (isOfficer(currentProfile.app_role)) {
@@ -50,15 +55,32 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
   const addWatch = async (event: FormEvent) => {
     event.preventDefault()
     try {
-      await apiPost('/api/bank/watch', {
-        item_key: itemKey.trim(),
-        display_name: displayName.trim() || itemKey.trim(),
+      const wanted = bankItemName.trim().toLowerCase()
+      const selected = bankItems.find((item: any) =>
+        String(item.name ?? '').trim().toLowerCase() === wanted ||
+        String(item.item_key ?? '').trim().toLowerCase() === wanted
+      )
+      if (!selected) {
+        setMessage('Choose an item from the synced clan bank list.')
+        return
+      }
+
+      const result: any = await apiPost('/api/bank/watch', {
+        item_key: selected.item_key,
+        display_name: selected.name,
         minimum_qty: minimum,
         preferred_qty: preferred || null,
         show_on_home: true,
       })
-      setMessage('Bank watch item saved.')
-      setItemKey(''); setDisplayName(''); setMinimum(0); setPreferred(0)
+
+      setMessage(
+        'Tracking ' + result.display_name + ' — current bank quantity ' +
+        Number(result.current_quantity ?? 0).toLocaleString() +
+        (result.preferred_adjusted ? '. Preferred target was raised to match the minimum.' : '.')
+      )
+      setBankItemName('')
+      setMinimum(0)
+      setPreferred(0)
       await refresh()
     } catch (error: any) {
       setMessage(error.message)
@@ -189,13 +211,36 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       <section className="panel">
         <div className="panel-title"><div><h2>Bank watch list</h2><p className="muted">Only explicitly tracked items can trigger low-stock cards.</p></div></div>
         <form className="form-grid" onSubmit={addWatch}>
-          <label>Item key<input value={itemKey} onChange={(e) => setItemKey(e.target.value)} placeholder="noctite_ore" required /></label>
-          <label>Display name<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Noctite Ore" /></label>
+          <label>Clan bank item
+            <input
+              list="bank-watch-items"
+              value={bankItemName}
+              onChange={(e) => setBankItemName(e.target.value)}
+              placeholder="Start typing, e.g. Moonwood Log"
+              required
+            />
+            <datalist id="bank-watch-items">
+              {bankItems.map((item: any) => (
+                <option key={String(item.item_key)} value={String(item.name)}>{Number(item.quantity ?? 0).toLocaleString()} in bank</option>
+              ))}
+            </datalist>
+          </label>
           <label>Minimum<input type="number" min={0} value={minimum} onChange={(e) => setMinimum(Number(e.target.value))} /></label>
           <label>Preferred<input type="number" min={0} value={preferred} onChange={(e) => setPreferred(Number(e.target.value))} /></label>
           <button className="primary-button">Save tracked item</button>
         </form>
-        {watch.map((item) => <div className="list-row" key={item.item_key}><div><strong>{item.display_name}</strong><span>{item.item_key} · min {Number(item.minimum_qty).toLocaleString()}</span></div><button className="ghost-button" onClick={() => removeWatch(item.item_key)}>Remove</button></div>)}
+        <p className="muted">Choose the actual synced bank item rather than typing an internal item key. Preferred should normally be the comfortable stock target and should be at least the minimum.</p>
+        {watch.map((item) => <div className="list-row" key={item.item_key}>
+          <div>
+            <strong>{item.display_name}</strong>
+            <span>
+              Current {Number(item.quantity ?? 0).toLocaleString()} · min {Number(item.minimum_qty).toLocaleString()}
+              {item.preferred_qty ? ' · preferred ' + Number(item.preferred_qty).toLocaleString() : ''}
+              {!item.matched ? ' · ⚠ not matched to current bank data' : ''}
+            </span>
+          </div>
+          <button className="ghost-button" onClick={() => removeWatch(item.item_key)}>Remove</button>
+        </div>)}
       </section>
 
       {isOwner(currentProfile.app_role) ? <section className="panel">
