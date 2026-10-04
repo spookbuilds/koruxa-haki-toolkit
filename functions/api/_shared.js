@@ -710,9 +710,12 @@ export async function sendOrderDiscord(env, orderId, event) {
   let ready_ping_message_id = null
   if (event === 'ready' && order.requester_discord_id) {
     const requesterId = String(order.requester_discord_id)
+    const readyInstruction = payload.total_gp
+      ? 'Please make your Koruxa buy orders using the quantities and unit prices on the updated card above.'
+      : 'Please check the updated card above for the materials/trade required.'
     const pingText =
       '<@' + requesterId + '> your **' + String(order.category_label || 'order') +
-      '** order is ready! Please make your Koruxa buy orders using the quantities and unit prices on the updated card above.'
+      '** order is ready! ' + readyInstruction
     const ping = await sendDiscordMessage(
       env,
       channelId,
