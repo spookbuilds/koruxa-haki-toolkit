@@ -64,6 +64,7 @@ export function itemEmoji(label: string, skillKey = '') {
   if (skillKey === 'fletching') return '🏹'
   if (skillKey === 'jewelery') return '💎'
   if (skillKey === 'farming') return '🌱'
+  if (skillKey === 'arcana') return '🔮'
   return '✦'
 }
 
@@ -122,6 +123,10 @@ export function orderGroup(skillKey: string, label: string, category?: string | 
     if (value.includes('super ')) return 'Super Potions'
     if (value.includes('brew') || value.includes('elixir') || value.includes('draught') || value.includes('scent')) return 'Special Potions'
     return 'Potions'
+  }
+  if (skillKey === 'arcana') {
+    if (value.includes('rune')) return 'Runes'
+    return 'Other Arcana'
   }
   if (skillKey === 'farming') {
     if (value.includes('seed')) return 'Seeds'
