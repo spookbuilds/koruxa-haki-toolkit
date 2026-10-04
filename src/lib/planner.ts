@@ -66,7 +66,7 @@ function ingredientToNode(
   if (!ingredient.src_action || trail.has(ingredient.src_action)) {
     return {
       itemKey: ingredient.item_key,
-      label: ingredient.item_key,
+      label: ingredient.label ?? ingredient.item_key,
       quantity: needed,
       skillKey: ingredient.src_skill,
       actionKey: ingredient.src_action,
