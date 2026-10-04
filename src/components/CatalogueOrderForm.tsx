@@ -374,7 +374,7 @@ export default function CatalogueOrderForm({
               </div>
             </div>
           )
-        }) : <p className="empty">Choose items above to build the request.</p>}
+        }) : <p className="empty">No items added yet. Choose an item above to start your order.</p>}
       </div>
 
       <label>Order notes
