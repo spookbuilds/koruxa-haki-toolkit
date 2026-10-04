@@ -83,13 +83,15 @@ export function orderGroup(skillKey: string, label: string, category?: string | 
     return 'Other Fletching'
   }
   if (skillKey === 'jewelery') {
+    // Jewellery item names often include the gem name (e.g. "Opal Ring"),
+    // so slot types must be checked before the gem-name matcher.
+    if (value.includes('ring')) return 'Rings'
+    if (value.includes('amulet') || value.includes('necklace')) return 'Amulets'
     if (
       value.startsWith('cut ') ||
       value.includes(' cut ') ||
       /\b(opal|amber|aquastone|garnet|frostgem|voidopal|sunstone|duskgem|stormheart|astralite|emberstone|magmaheart|pyreshard)\b/.test(value)
     ) return 'Cut Gems'
-    if (value.includes('ring')) return 'Rings'
-    if (value.includes('amulet')) return 'Amulets'
     return 'Other Jewellery'
   }
   if (skillKey === 'crafting') {
