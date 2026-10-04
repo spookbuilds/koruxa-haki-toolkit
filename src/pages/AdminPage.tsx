@@ -314,11 +314,32 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       </section>
 
       <section className="panel">
-        <div className="panel-title"><div><h2>Order fulfilment permissions</h2><p className="muted">These are separate from app rank. For example, only selected members can be allowed to fulfil Fish orders.</p></div></div>
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">SHOP STAFFING</span>
+            <h2>Shop owners / suppliers</h2>
+            <p className="muted">Assign the members allowed to fulfil each shop. Assigned members are listed publicly on that order board and can mark themselves Busy without disabling new orders.</p>
+          </div>
+        </div>
         <label>Member<select value={permissionMember} onChange={(e) => setPermissionMember(e.target.value)}>{profiles.filter((profile) => profile.clan_verified || profile.app_role === 'owner').map((profile) => <option key={profile.id} value={profile.id}>{profile.koruxa_name ?? profile.display_name ?? profile.id}</option>)}</select></label>
         <div className="permission-grid">{categories.map((category) => {
           const checked = selectedPermissions.has(category.id)
-          return <label className="check-card" key={category.id}><input type="checkbox" checked={checked} onChange={(e) => togglePermission(category.id, e.target.checked)} /><span><strong>{category.label}</strong><small>{category.description}</small></span></label>
+          const assigned = permissions
+            .filter((permission) => permission.category_id === category.id)
+            .map((permission) => profiles.find((profile) => profile.id === permission.profile_id))
+            .filter(Boolean)
+          return <label className="check-card shop-owner-admin-card" key={category.id}>
+            <input type="checkbox" checked={checked} onChange={(e) => togglePermission(category.id, e.target.checked)} />
+            <span>
+              <strong>{category.label}</strong>
+              <small>{category.description}</small>
+              <small className="shop-owner-admin-list">
+                {assigned.length
+                  ? 'Shop owners: ' + assigned.map((profile: any) => profile.koruxa_name ?? profile.display_name ?? 'Member').join(', ')
+                  : 'No shop owners assigned yet'}
+              </small>
+            </span>
+          </label>
         })}</div>
       </section>
 
