@@ -1061,3 +1061,77 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     min-height: 130px;
   }
 }
+
+
+/* ===== PLANNER AUTOMATION ===== */
+.planner-picker-grid {
+  display: grid;
+  grid-template-columns: minmax(180px,.7fr) minmax(320px,1.4fr) minmax(150px,.55fr);
+  gap: 12px;
+  align-items: end;
+}
+.modifier-preset-grid {
+  display: grid;
+  grid-template-columns: minmax(240px,.8fr) minmax(320px,1.4fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+.modifier-preset-card {
+  min-height: 66px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 12px;
+  border: 1px solid #3a4d69;
+  border-radius: 11px;
+  background: linear-gradient(180deg,#131d2a,#121620);
+}
+.modifier-preset-card strong,
+.modifier-preset-card span { display: block; }
+.modifier-preset-card > div:first-child span {
+  margin-top: 3px;
+  color: #899bb1;
+  font-size: .75rem;
+}
+.modifier-preset-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+.modifier-preset-stats span {
+  padding: 4px 7px;
+  color: #cdeaff;
+  border: 1px solid #365a7a;
+  border-radius: 999px;
+  background: #13263a;
+  font-size: .68rem;
+  white-space: nowrap;
+}
+.advanced-overrides {
+  margin: 14px 0;
+  padding: 10px 12px;
+  border: 1px solid #342b43;
+  border-radius: 10px;
+  background: #15111c;
+}
+.advanced-overrides summary {
+  cursor: pointer;
+  color: #b8a6ca;
+  font-weight: 800;
+}
+.advanced-overrides[open] summary { margin-bottom: 10px; }
+
+@media (max-width: 1050px) {
+  .planner-picker-grid { grid-template-columns: 1fr 1.4fr; }
+  .planner-picker-grid label:last-child { grid-column: 1 / -1; }
+  .modifier-preset-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .planner-picker-grid,
+  .modifier-preset-grid { grid-template-columns: 1fr; }
+  .planner-picker-grid label:last-child { grid-column: auto; }
+  .modifier-preset-card { align-items: flex-start; flex-direction: column; }
+  .modifier-preset-stats { justify-content: flex-start; }
+}
