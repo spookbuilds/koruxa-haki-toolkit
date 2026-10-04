@@ -301,46 +301,103 @@ async function syncLogsSeedsCatalogue(env) {
 }
 
 async function syncThievingCatalogue(env) {
-  const html = await fetchWikiHtml('/wiki/skills/thieving.html')
-  const rows = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
-  const actions = []
+  const paths = [
+    '/wiki/skills/thieving.html',
+    '/wiki/thieving.html',
+    '/wiki/skills/thieving/index.html',
+  ]
 
-  for (const rowHtml of rows) {
-    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => htmlCellText(match[1]))
-    const level = Number.parseInt(cells[0], 10)
-    const source = cells[1]
-    if (!Number.isFinite(level) || !source) continue
+  let bestActions = []
 
-    const candidates = new Set()
-    if (cells[5] && cells[5] !== '—') {
-      const made = parseWikiQuantityLabel(cells[5].split('\n')[0])
-      if (made.label && !/coins?|gold/i.test(made.label)) candidates.add(made.label)
+  for (const path of paths) {
+    let html
+    try {
+      html = await fetchWikiHtml(path)
+    } catch {
+      continue
     }
-    for (const item of parseWikiDropLines(cells[cells.length - 1] || '')) candidates.add(item)
 
-    for (const item of candidates) {
-      actions.push({
-        action_key: 'wiki_thieving_' + slugify(source) + '_' + slugify(item),
-        skill_key: 'thieving',
-        label: source,
-        min_level: level,
-        duration_ms: 0,
-        xp: 0,
-        amount: 1,
-        reward_item_key: slugify(item),
-        reward_label: item,
-        image: null,
-        is_recipe: false,
-        category: source,
-        ingredients: [],
-      })
+    const rows = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+    const actions = []
+
+    for (const rowHtml of rows) {
+      const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)]
+        .map((match) => htmlCellText(match[1]))
+        .filter((cell) => cell !== '')
+
+      if (cells.length < 2) continue
+
+      const levelMatch = String(cells[0]).match(/\b(\d{1,3})\b/)
+      const level = levelMatch ? Number(levelMatch[1]) : 1
+      const source = String(cells[1] || '').trim()
+      if (!source || /^(target|source|npc|node|loot|item)$/i.test(source)) continue
+
+      // Thieving's wiki table is not shaped like the normal crafting tables.
+      // The reliable part is that loot entries link to their item wiki pages,
+      // so read those links directly instead of assuming fixed column numbers.
+      const itemLinks = [...rowHtml.matchAll(
+        /<a\b[^>]*href=["'](?:https:\/\/koruxa\.com)?\/wiki\/items\/([a-z0-9_-]+)\.html[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi,
+      )]
+
+      const linkedItems = itemLinks
+        .map((match) => ({
+          item_key: slugify(match[1]),
+          label: htmlCellText(match[2]),
+        }))
+        .filter((item) => item.item_key && item.label && !/^view$/i.test(item.label))
+
+      const candidates = new Map(linkedItems.map((item) => [item.item_key, item.label]))
+
+      // Fallback for any loot rendered as plain text rather than a link.
+      // Use the later cells only; the first cells are level/target metadata.
+      if (!candidates.size) {
+        for (const cell of cells.slice(2)) {
+          for (const item of parseWikiDropLines(cell)) {
+            const key = slugify(item)
+            if (
+              key &&
+              !/^(always|common|uncommon|rare|epic|legendary|coins?|gold|success|chance|xp|time)$/.test(key) &&
+              !/^\d+$/.test(key)
+            ) {
+              candidates.set(key, item)
+            }
+          }
+        }
+      }
+
+      for (const [itemKey, itemLabel] of candidates) {
+        actions.push({
+          action_key: 'wiki_thieving_' + slugify(source) + '_' + itemKey,
+          skill_key: 'thieving',
+          label: source,
+          min_level: Number.isFinite(level) ? level : 1,
+          duration_ms: 0,
+          xp: 0,
+          amount: 1,
+          reward_item_key: itemKey,
+          reward_label: itemLabel,
+          image: null,
+          is_recipe: false,
+          category: source,
+          ingredients: [],
+        })
+      }
     }
+
+    const unique = [...new Map(actions.map((row) => [row.action_key, row])).values()]
+    if (unique.length > bestActions.length) bestActions = unique
+    if (unique.length >= 3) break
   }
 
-  if (!actions.length) throw new HttpError(502, 'Could not read the Koruxa Thieving loot table')
-  const unique = [...new Map(actions.map((row) => [row.action_key, row])).values()]
-  await storeOrderActions(env, unique)
-  return unique
+  if (!bestActions.length) {
+    throw new HttpError(
+      502,
+      'Could not read the Koruxa Thieving loot table. The wiki layout was found, but no item links could be extracted.'
+    )
+  }
+
+  await storeOrderActions(env, bestActions)
+  return bestActions
 }
 
 async function syncWikiSkill(env, skillKey) {
