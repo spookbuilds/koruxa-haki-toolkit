@@ -392,7 +392,7 @@ export default function CombatOrderForm({
               <button type="button" onClick={() => setBasket((current) => current.filter((entry) => entry.id !== line.id))}>Remove</button>
             </div>
           </div>
-        )) : <p className="empty">Choose farmable drops above to build the request.</p>}
+        )) : <p className="empty">No drops added yet. Choose one above to start your order.</p>}
       </div>
 
       <label>Order notes
