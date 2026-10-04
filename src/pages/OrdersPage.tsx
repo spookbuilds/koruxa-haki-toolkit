@@ -29,6 +29,7 @@ function orderNotes(order: ClanOrder) {
 }
 
 export default function OrdersPage({ currentProfile }: { currentProfile: Profile }) {
+  const outsider = currentProfile.access_role === 'outsider' || (!currentProfile.clan_verified && currentProfile.app_role !== 'owner')
   const [orders, setOrders] = useState<ClanOrder[]>([])
   const [categories, setCategories] = useState<OrderCategory[]>([])
   const [activeCategory, setActiveCategory] = useState('')
@@ -97,14 +98,16 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
       <header className="exchange-hero">
         <div className="exchange-hero-glow" />
         <div>
-          <span className="exchange-kicker">STRAWHATS [HAKI] EXCHANGE</span>
-          <h1>Clan Order Board</h1>
-          <p>Place polished, easy-to-read orders and keep every request visible from creation to collection.</p>
+          <span className="exchange-kicker">{outsider ? 'STRAWHATS [HAKI] PUBLIC EXCHANGE' : 'STRAWHATS [HAKI] EXCHANGE'}</span>
+          <h1>{outsider ? 'Order Exchange' : 'Clan Order Board'}</h1>
+          <p>{outsider
+            ? 'Place an order with StrawHats. Your account can only see the Orders area and your own requests.'
+            : 'Place polished, easy-to-read orders and keep every request visible from creation to collection.'}</p>
         </div>
         <div className="exchange-hero-badge">
           <span>LIVE</span>
           <strong>{counts.active}</strong>
-          <small>active orders</small>
+          <small>{outsider ? 'your active orders' : 'active orders'}</small>
         </div>
       </header>
 
@@ -159,14 +162,17 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
         </div>
 
         <div className="order-view-tabs">
-          {([
+          {(outsider ? ([
+            ['mine', 'My Requests', counts.mine],
+            ['history', 'History', counts.history],
+          ] as Array<[QueueView, string, number]>) : ([
             ['mine', 'My Requests', counts.mine],
             ['claimable', 'Claimable', counts.claimable],
             ['working', 'Working On', counts.working],
             ['ready', 'Ready', counts.ready],
             ['active', 'All Active', counts.active],
             ['history', 'History', counts.history],
-          ] as Array<[QueueView, string, number]>).map(([key, label, count]) => (
+          ] as Array<[QueueView, string, number]>)).map(([key, label, count]) => (
             <button key={key} className={queueView === key ? 'order-view-tab active' : 'order-view-tab'} onClick={() => setQueueView(key)}>
               {label}<span>{count}</span>
             </button>
