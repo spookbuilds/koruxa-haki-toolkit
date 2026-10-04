@@ -3,7 +3,7 @@ import FishOrderForm from '../components/FishOrderForm'
 import OreGemOrderForm from '../components/OreGemOrderForm'
 import CatalogueOrderForm from '../components/CatalogueOrderForm'
 import PotionOrderForm from '../components/PotionOrderForm'
-import { getOrderCategories, getOrders } from '../lib/data'
+import { getOrderCategories, getOrders, invokeKoruxa } from '../lib/data'
 import { apiPost } from '../lib/api'
 import type { ClanOrder, OrderCategory, Profile } from '../types'
 
@@ -28,13 +28,15 @@ function orderNotes(order: ClanOrder) {
   return String(order.payload?.notes ?? '').trim()
 }
 
-export default function OrdersPage({ currentProfile }: { currentProfile: Profile }) {
+export default function OrdersPage({ currentProfile, onProfileChanged }: { currentProfile: Profile; onProfileChanged?: () => Promise<void> | void }) {
   const outsider = currentProfile.access_role === 'outsider' || (!currentProfile.clan_verified && currentProfile.app_role !== 'owner')
   const [orders, setOrders] = useState<ClanOrder[]>([])
   const [categories, setCategories] = useState<OrderCategory[]>([])
   const [activeCategory, setActiveCategory] = useState('')
   const [queueView, setQueueView] = useState<QueueView>('mine')
   const [message, setMessage] = useState('')
+  const [verificationToken, setVerificationToken] = useState('')
+  const [verifying, setVerifying] = useState(false)
 
   const refresh = async () => {
     const [orderRows, categoryRows] = await Promise.all([getOrders(), getOrderCategories()])
@@ -92,6 +94,22 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
   }
 
   const activeCategoryInfo = categories.find((category) => category.id === activeCategory)
+  const verifyClanMembership = async () => {
+    if (!verificationToken.trim()) return
+    try {
+      setVerifying(true)
+      setMessage('Checking your Koruxa character against the StrawHats roster…')
+      const result: any = await invokeKoruxa('connect', { token: verificationToken.trim() })
+      setVerificationToken('')
+      setMessage('Verified as ' + (result?.username ?? 'a StrawHats member') + '. Full clan access is now enabled.')
+      await onProfileChanged?.()
+    } catch (error: any) {
+      setMessage(error.message ?? 'Could not verify your Koruxa membership.')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
 
   return (
     <div className="page orders-page">
@@ -110,6 +128,26 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
           <small>{outsider ? 'your active orders' : 'active orders'}</small>
         </div>
       </header>
+
+      {outsider ? <section className="panel outsider-access-card">
+        <div className="panel-title">
+          <div>
+            <span className="eyebrow">OUTSIDER ACCESS</span>
+            <h2>Orders only</h2>
+            <p className="muted">You can place and track your own orders, but you cannot see the clan home, roster, bank, leaderboards, planner, crafters or Admin.</p>
+          </div>
+        </div>
+        <details>
+          <summary>Are you actually a StrawHats member?</summary>
+          <div className="stack outsider-verify-form">
+            <p className="muted">Enter your personal read-only Koruxa API token. It is checked against the synced StrawHats roster and encrypted server-side.</p>
+            <input type="password" value={verificationToken} onChange={(e) => setVerificationToken(e.target.value)} placeholder="kxu_…" />
+            <button className="secondary-button" type="button" disabled={!verificationToken.trim() || verifying} onClick={verifyClanMembership}>
+              {verifying ? 'Verifying…' : 'Verify clan membership'}
+            </button>
+          </div>
+        </details>
+      </section> : null}
 
       <section className="exchange-section">
         <div className="exchange-section-title">
