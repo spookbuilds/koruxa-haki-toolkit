@@ -3349,3 +3349,72 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     flex: 0 0 auto;
   }
 }
+
+
+/* ===== COMPACT ORDER BOARD HERO ===== */
+.exchange-hero.exchange-hero-image {
+  min-height: 0;
+  padding: 8px;
+  align-items: center;
+}
+
+.exchange-hero-art {
+  height: 150px;
+  min-height: 0;
+  border-radius: 13px;
+}
+
+.exchange-hero-art img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  object-position: center;
+  transform: scale(1.08);
+  transform-origin: center;
+}
+
+.exchange-hero-image .exchange-hero-badge {
+  flex: 0 0 128px;
+  min-width: 128px;
+  padding: 12px 14px;
+}
+
+@media (max-width: 900px) {
+  .exchange-hero-art {
+    height: 126px;
+    min-height: 0;
+  }
+
+  .exchange-hero-art img {
+    min-height: 0;
+    transform: scale(1.1);
+  }
+}
+
+@media (max-width: 720px) {
+  .exchange-hero.exchange-hero-image {
+    padding: 7px;
+    gap: 7px;
+  }
+
+  .exchange-hero-art {
+    width: 100%;
+    height: 92px;
+    min-height: 0;
+    aspect-ratio: auto;
+  }
+
+  .exchange-hero-art img {
+    height: 100%;
+    min-height: 0;
+    object-fit: cover;
+    object-position: center;
+    transform: scale(1.12);
+  }
+
+  .exchange-hero-image .exchange-hero-badge {
+    min-width: 0;
+    padding: 9px 11px;
+  }
+}
