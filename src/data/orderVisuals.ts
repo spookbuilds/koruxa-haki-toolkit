@@ -70,7 +70,6 @@ export function itemEmoji(label: string, skillKey = '') {
 export function orderGroup(skillKey: string, label: string, category?: string | null) {
   const value = label.toLowerCase()
   const cleanCategory = String(category || '').trim()
-  if (cleanCategory && !['recipe', 'recipes', 'general', 'other'].includes(cleanCategory.toLowerCase())) return cleanCategory
 
   if (skillKey === 'smithing') {
     if (value.includes('bar')) return 'Bars'
@@ -84,7 +83,11 @@ export function orderGroup(skillKey: string, label: string, category?: string | 
     return 'Other Fletching'
   }
   if (skillKey === 'jewelery') {
-    if (value.startsWith('cut ') || value.includes(' cut ')) return 'Cut Gems'
+    if (
+      value.startsWith('cut ') ||
+      value.includes(' cut ') ||
+      /\b(opal|amber|aquastone|garnet|frostgem|voidopal|sunstone|duskgem|stormheart|astralite|emberstone|magmaheart|pyreshard)\b/.test(value)
+    ) return 'Cut Gems'
     if (value.includes('ring')) return 'Rings'
     if (value.includes('amulet')) return 'Amulets'
     return 'Other Jewellery'
@@ -126,5 +129,7 @@ export function orderGroup(skillKey: string, label: string, category?: string | 
     if (value.includes('fruit') || value.includes('berry') || value.includes('grape') || value.includes('melon')) return 'Fruit'
     return 'Crops & Produce'
   }
-  return cleanCategory || 'Items'
+
+  if (cleanCategory && !['recipe', 'recipes', 'general', 'other'].includes(cleanCategory.toLowerCase())) return cleanCategory
+  return 'Items'
 }
