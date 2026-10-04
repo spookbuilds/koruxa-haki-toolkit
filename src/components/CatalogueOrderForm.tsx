@@ -11,6 +11,11 @@ import jewelleryHeader from '../../assets/images/orders/jewellery-header.png'
 import potionsHeader from '../../assets/images/orders/potions-header.png'
 import farmingHeader from '../../assets/images/orders/farming-header.png'
 import fishHeader from '../../assets/images/orders/fish-header.png'
+import logsSeedsHeader from '../../assets/images/orders/logs-seeds-header.png'
+import runesHeader from '../../assets/images/orders/runes-header.png'
+import thievingHeader from '../../assets/images/orders/thieving-header.png'
+import constructionHeader from '../../assets/images/orders/construction-header.png'
+import tinkeringHeader from '../../assets/images/orders/tinkering-header.png'
 
 const orderHeaderImages: Record<string, string> = {
   smithing: smithingHeader,
@@ -20,6 +25,11 @@ const orderHeaderImages: Record<string, string> = {
   herblore: potionsHeader,
   farming: farmingHeader,
   cooking: fishHeader,
+  'logs-seeds': logsSeedsHeader,
+  arcana: runesHeader,
+  thieving: thievingHeader,
+  construction: constructionHeader,
+  tinkering: tinkeringHeader,
 }
 
 type BasketLine = {
