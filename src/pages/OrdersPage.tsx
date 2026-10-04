@@ -9,6 +9,12 @@ import type { ClanOrder, OrderCategory, Profile } from '../types'
 
 type QueueView = 'mine' | 'claimable' | 'working' | 'ready' | 'active' | 'history'
 
+function categoryDisplayLabel(category: OrderCategory) {
+  if (category.id === 'ore-gems') return 'Mining · Ore & Uncut Gems'
+  if (category.id === 'jewelery') return 'Jewellery · Cut Gems'
+  return category.label
+}
+
 function orderLines(order: ClanOrder) {
   const lines = Array.isArray(order.payload?.lines) ? order.payload.lines as any[] : []
   return lines
@@ -125,7 +131,7 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
                 fletching: '🏹',
                 farming: '🌱',
               } as Record<string,string>)[category.id] ?? '✦'}</span>
-              <span><strong>{category.label}</strong><small>{category.id === 'ore-gems' ? 'Ore & gem market' : category.id === 'fish' ? 'Fresh catch market' : category.id === 'herblore' ? 'Potions & Overloads' : 'Full Koruxa catalogue'}</small></span>
+              <span><strong>{categoryDisplayLabel(category)}</strong><small>{category.id === 'ore-gems' ? 'Ore & gem market' : category.id === 'fish' ? 'Fresh catch market' : category.id === 'herblore' ? 'Potions & Overloads' : 'Full Koruxa catalogue'}</small></span>
             </button>
           ))}
         </div>
@@ -137,7 +143,7 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
             activeCategory === 'smithing' ? <CatalogueOrderForm skillKey="smithing" title="Smithing" onSubmit={insertOrder} /> :
             activeCategory === 'crafting' ? <CatalogueOrderForm skillKey="crafting" title="Crafting" onSubmit={insertOrder} /> :
             activeCategory === 'fletching' ? <CatalogueOrderForm skillKey="fletching" title="Fletching" onSubmit={insertOrder} /> :
-            activeCategory === 'jewelery' ? <CatalogueOrderForm skillKey="jewelery" title="Jewellery" onSubmit={insertOrder} /> :
+            activeCategory === 'jewelery' ? <CatalogueOrderForm skillKey="jewelery" title="Jewellery" subtitle="CUT gems only — jewellery uses the cut versions of gems, never the uncut Mining drops." onSubmit={insertOrder} /> :
             activeCategory === 'farming' ? <CatalogueOrderForm skillKey="farming" title="Farming" onSubmit={insertOrder} /> :
             <div className="order-board-main"><div className="notice">This order board is not configured.</div></div>}
         </div>
