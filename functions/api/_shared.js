@@ -168,15 +168,35 @@ export async function requireClanUser(context, roles = null) {
 
 export async function fetchKoruxa(path, token) {
   const separator = path.includes('?') ? '&' : '?'
-  const response = await fetch('https://koruxa.com/api/public' + path + separator + 'token=' + encodeURIComponent(token), {
-    headers: { Accept: 'application/json' },
-  })
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+
+  let response
+  try {
+    response = await fetch('https://koruxa.com/api/public' + path + separator + 'token=' + encodeURIComponent(token), {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new HttpError(504, 'Koruxa API timed out after 15 seconds')
+    throw new HttpError(502, 'Could not reach the Koruxa API')
+  } finally {
+    clearTimeout(timeout)
+  }
+
   const text = await response.text()
   let data
   try { data = JSON.parse(text) } catch { throw new HttpError(502, 'Koruxa returned a non-JSON response') }
+
   if (!response.ok || data?.success === false || data?.ok === false) {
-    throw new HttpError(response.status >= 400 ? response.status : 502, data?.message || data?.error || 'Koruxa API request failed')
+    const retryAfter = response.headers.get('retry-after')
+    const suffix = response.status === 429 && retryAfter ? ' Retry after ' + retryAfter + ' seconds.' : ''
+    throw new HttpError(
+      response.status >= 400 ? response.status : 502,
+      (data?.message || data?.error || 'Koruxa API request failed') + suffix,
+    )
   }
+
   return data
 }
 
@@ -237,6 +257,43 @@ export function normalizeSkills(value) {
       }
     })
     .filter(Boolean)
+}
+
+export function extractKoruxaMe(payload) {
+  if (!payload || typeof payload !== 'object') return payload
+
+  const queue = [payload]
+  const seen = new Set()
+
+  while (queue.length) {
+    const value = queue.shift()
+    if (!value || typeof value !== 'object' || seen.has(value)) continue
+    seen.add(value)
+
+    const hasIdentity = value.id != null || value.character_id != null || value.username || value.name
+    const hasProfileData =
+      value.skills != null ||
+      value.total_level != null ||
+      value.total_xp != null ||
+      value.equipment != null ||
+      value.farms != null ||
+      value.private != null
+
+    if (hasIdentity && hasProfileData) {
+      return {
+        ...value,
+        id: value.id ?? value.character_id,
+        username: value.username ?? value.character ?? value.name,
+      }
+    }
+
+    for (const key of ['data','player','character','profile','me','result']) {
+      const child = value[key]
+      if (child && typeof child === 'object') queue.push(child)
+    }
+  }
+
+  return payload
 }
 
 export function extractSkillsFromMe(me) {
@@ -305,8 +362,11 @@ export function snapshotFromRow(row) {
   }
 }
 
-export async function writePlayerSnapshot(env, userId, me) {
+export async function writePlayerSnapshot(env, userId, input) {
+  const me = extractKoruxaMe(input)
   const now = nowIso()
+
+  if (me?.id == null) throw new HttpError(502, 'Koruxa /me response did not contain a character ID')
   await env.DB.batch([
     env.DB.prepare(
       `INSERT INTO member_snapshots
