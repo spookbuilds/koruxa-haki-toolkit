@@ -676,6 +676,7 @@ async function combatMonsterIndex(env, force = false) {
   if (!force && Array.isArray(cached) && cached.length && age < 24 * 60 * 60 * 1000) return cached
 
   const monsters = new Map()
+  const slayerOnly = new Set()
   const sources = [
     '/sitemap.xml',
     '/wiki/sitemap.xml',
@@ -688,6 +689,15 @@ async function combatMonsterIndex(env, force = false) {
     try {
       const html = await fetchWikiHtml(path)
       for (const [key, name] of monsterLinksFromHtml(html)) monsters.set(key, name)
+
+      if (path === '/wiki/slayer.html') {
+        const taskSection = String(html).split(/<h2\b[^>]*>\s*Task-only monsters\s*<\/h2>/i)[1] || ''
+        const taskTable = taskSection.match(/<table\b[^>]*>[\s\S]*?<\/table>/i)?.[0] || taskSection
+        for (const [key, name] of monsterLinksFromHtml(taskTable)) {
+          monsters.set(key, name)
+          slayerOnly.add(key)
+        }
+      }
     } catch (error) {
       console.log('Combat monster index source failed', path, error)
     }
@@ -713,7 +723,7 @@ async function combatMonsterIndex(env, force = false) {
   }
 
   const result = [...monsters.entries()]
-    .map(([key, name]) => ({ key, name }))
+    .map(([key, name]) => ({ key, name, slayer_only: slayerOnly.has(key) }))
     .sort((a, b) => a.name.localeCompare(b.name))
 
   await env.DB.prepare(
@@ -1673,7 +1683,10 @@ async function handle(context) {
       "SELECT 1 AS ok FROM fulfilment_permissions WHERE user_id=? AND category_id='combat'"
     ).bind(user.id).first()
 
-    const index = await combatMonsterIndex(env)
+    let index = await combatMonsterIndex(env)
+    if (index.length && !index.some((monster) => Object.prototype.hasOwnProperty.call(monster, 'slayer_only'))) {
+      index = await combatMonsterIndex(env, true)
+    }
     const { results } = await env.DB.prepare(
       'SELECT monster_key,monster_name FROM combat_supplier_monsters WHERE user_id=? ORDER BY monster_name'
     ).bind(user.id).all()
