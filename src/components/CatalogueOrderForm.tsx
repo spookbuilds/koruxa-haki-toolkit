@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { getSkillActions } from '../lib/data'
 import { apiPost } from '../lib/api'
 import { itemEmoji, orderGroup } from '../data/orderVisuals'
+import SupplierOfferPanel, { type SupplierOfferOption } from './SupplierOfferPanel'
 import type { SkillAction } from '../types'
 import smithingHeader from '../../assets/images/orders/smithing-header.png'
 import craftingHeader from '../../assets/images/orders/crafting-header.png'
@@ -109,12 +110,14 @@ export default function CatalogueOrderForm({
   subtitle,
   onSubmit,
   excludeLabels = [],
+  categoryId,
 }: {
   skillKey: string
   title: string
   subtitle?: string
   onSubmit: (summary: string, payload: Record<string, unknown>) => Promise<void>
   excludeLabels?: string[]
+  categoryId?: string
 }) {
   const [catalog, setCatalog] = useState<SkillAction[]>([])
   const [selectedKey, setSelectedKey] = useState('')
@@ -198,6 +201,15 @@ export default function CatalogueOrderForm({
       })
     : preferredGroups(skillKey, [...groups.keys()])
   const selectedMaterials = selected ? materialLines(selected, Math.max(1, quantity)) : []
+  const supplierCategoryId = categoryId ?? skillKey
+  const supplierSkillKey = skillKey === 'logs-seeds' ? 'woodcutting' : skillKey
+  const supplierOptions = useMemo<SupplierOfferOption[]>(() => catalog.map((action) => ({
+    key: action.action_key,
+    label: displayActionLabel(action, skillKey),
+    group: orderGroup(skillKey, action.reward_label, action.category),
+    skillKey: supplierSkillKey,
+    minLevel: Number(action.min_level || 1),
+  })), [catalog, skillKey, supplierSkillKey])
 
   const add = () => {
     if (!selected) return
@@ -329,6 +341,13 @@ export default function CatalogueOrderForm({
           )) : <p className="empty">No material requirement is listed for this Koruxa action.</p>}
         </div>
       </div> : null}
+
+      <SupplierOfferPanel
+        categoryId={supplierCategoryId}
+        options={supplierOptions}
+        selectedKey={selected?.action_key}
+        basketKeys={basket.map((line) => line.action.action_key)}
+      />
 
       <div className="order-preview-board">
         <div className="order-preview-title"><span>YOUR ORDER</span><strong>{basket.length} selected</strong></div>
