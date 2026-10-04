@@ -12,9 +12,15 @@ type Candidate = {
 }
 
 function normaliseSkillKey(value: unknown) {
-  const key = String(value ?? '').trim().toLowerCase().replace(/\s+/g, '_')
-  if (key === 'jewellery') return 'jewelery'
-  return key
+  const key = String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  const aliases: Record<string, string> = {
+    jewellery: 'jewelery',
+    runecrafting: 'arcana',
+    rune_crafting: 'arcana',
+    runecraft: 'arcana',
+    arcane: 'arcana',
+  }
+  return aliases[key] ?? key
 }
 
 function findSkill(skills: any[], wanted: string) {
