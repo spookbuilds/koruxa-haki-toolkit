@@ -299,14 +299,14 @@ export async function sendOrderDiscord(env, orderId, event) {
     farming: '🌱',
   }
   const colors = {
-    'ore-gems': 0x2f9fff,
-    fish: 0x38b8e8,
-    smithing: 0xe0a43a,
-    crafting: 0xb88cff,
-    jewelery: 0xd96df2,
-    herblore: 0x77d36b,
-    fletching: 0x65b983,
-    farming: 0x74c95d,
+    'ore-gems': 0x35a7ff,
+    fish: 0xf2c94c,
+    smithing: 0xe49b39,
+    crafting: 0xb77cff,
+    jewelery: 0xd76de8,
+    herblore: 0x72cf72,
+    fletching: 0x62bc8d,
+    farming: 0x79c85d,
   }
   const icon = icons[order.category_id] || '✦'
   const color = colors[order.category_id] || 0x8d6abe
@@ -342,34 +342,36 @@ export async function sendOrderDiscord(env, orderId, event) {
 
   if (event === 'created') {
     const fields = [
-      { name: 'Player', value: String(order.requester_name || 'Clan member').slice(0, 1024), inline: true },
+      { name: '👤 Player', value: String(order.requester_name || 'Clan member').slice(0, 1024), inline: true },
     ]
 
     if (order.category_id === 'fish') {
       const fishCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
-      fields.push({ name: 'Fish count', value: formatNumber(fishCount), inline: true })
+      fields.push({ name: '🐟 Fish count', value: formatNumber(fishCount), inline: true })
     } else if (payload.receive_total) {
-      fields.push({ name: 'Requested', value: formatNumber(payload.receive_total) + ' Overload Potions', inline: true })
+      fields.push({ name: '⚗️ Requested', value: formatNumber(payload.receive_total) + ' Overload Potions', inline: true })
     } else {
       const itemCount = lines.reduce((sum, line) => sum + Number(line.quantity || 0), 0)
-      if (itemCount) fields.push({ name: 'Item count', value: formatNumber(itemCount), inline: true })
+      if (itemCount) fields.push({ name: '📦 Item count', value: formatNumber(itemCount), inline: true })
     }
 
-    if (payload.total_gp) fields.push({ name: 'Order total', value: '🪙 **' + formatNumber(payload.total_gp) + ' GP**', inline: true })
+    if (payload.total_gp) fields.push({ name: '🪙 Order total', value: '**' + formatNumber(payload.total_gp) + ' GP**', inline: true })
     if (Array.isArray(payload.give_totals) && payload.give_totals.length) {
       fields.push({
-        name: 'Total materials to trade',
+        name: '🔁 Total materials to trade',
         value: payload.give_totals.map((entry) => '**' + formatNumber(entry.amount) + '** ' + String(entry.name)).join('\n').slice(0, 1024),
         inline: false,
       })
     }
-    if (notes) fields.push({ name: 'Notes', value: notes.slice(0, 1024), inline: false })
+    if (notes) fields.push({ name: '📝 Notes', value: notes.slice(0, 1024), inline: false })
 
     embeds = [{
+      author: { name: 'HAKI Toolkit • StrawHats [HAKI]' },
       title: icon + ' New ' + categoryLabel + ' Order',
       description: (detailLines.join('\n\n') || String(order.summary || '')).slice(0, 4000),
       color,
       fields,
+      footer: { text: 'Clan Exchange • Track status in HAKI Toolkit' },
       timestamp: order.created_at || new Date().toISOString(),
     }]
   }
@@ -458,15 +460,17 @@ export async function sendDiscordMessage(env, channelId, content, allowedUsers =
   // only thing missing, deliver a readable plain-text fallback instead of losing
   // the clan notification, and surface a precise warning in the app.
   if (!response.ok && response.status === 403 && embeds?.length) {
+    const ticketBody = embeds.flatMap((embed) => [
+      embed.title ? '**' + embed.title + '**' : '',
+      embed.description || '',
+      ...(Array.isArray(embed.fields)
+        ? embed.fields.map((field) => '**' + field.name + '**\n' + field.value)
+        : []),
+    ]).filter(Boolean).join('\n\n')
+
     const fallbackText = [
       content,
-      ...embeds.flatMap((embed) => [
-        embed.title ? '**' + embed.title + '**' : '',
-        embed.description || '',
-        ...(Array.isArray(embed.fields)
-          ? embed.fields.map((field) => '**' + field.name + '**\n' + field.value)
-          : []),
-      ]),
+      ticketBody ? '>>> ' + ticketBody : '',
     ].filter(Boolean).join('\n\n').slice(0, 1900)
 
     const fallback = await fetch(url, {
