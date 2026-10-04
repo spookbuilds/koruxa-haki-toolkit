@@ -130,8 +130,9 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
                 herblore: '🧪',
                 fletching: '🏹',
                 farming: '🌱',
+                arcana: '🔮',
               } as Record<string,string>)[category.id] ?? '✦'}</span>
-              <span><strong>{categoryDisplayLabel(category)}</strong><small>{category.id === 'ore-gems' ? 'Ore & gem market' : category.id === 'fish' ? 'Fresh catch market' : category.id === 'herblore' ? 'Potions & Overloads' : 'Full Koruxa catalogue'}</small></span>
+              <span><strong>{categoryDisplayLabel(category)}</strong><small>{category.id === 'ore-gems' ? 'Ore & gem market' : category.id === 'fish' ? 'Fresh catch market' : category.id === 'herblore' ? 'Potions & Overloads' : category.id === 'arcana' ? 'Rune orders' : 'Full Koruxa catalogue'}</small></span>
             </button>
           ))}
         </div>
@@ -145,6 +146,7 @@ export default function OrdersPage({ currentProfile }: { currentProfile: Profile
             activeCategory === 'fletching' ? <CatalogueOrderForm skillKey="fletching" title="Fletching" onSubmit={insertOrder} /> :
             activeCategory === 'jewelery' ? <CatalogueOrderForm skillKey="jewelery" title="Jewellery" subtitle="CUT gems only — jewellery uses the cut versions of gems, never the uncut Mining drops." onSubmit={insertOrder} /> :
             activeCategory === 'farming' ? <CatalogueOrderForm skillKey="farming" title="Farming" onSubmit={insertOrder} /> :
+            activeCategory === 'arcana' ? <CatalogueOrderForm skillKey="arcana" title="Arcana · Runes" subtitle="Order crafted runes directly from the Arcana catalogue." onSubmit={insertOrder} /> :
             <div className="order-board-main"><div className="notice">This order board is not configured.</div></div>}
         </div>
         {message ? <p className="notice">{message}</p> : null}
