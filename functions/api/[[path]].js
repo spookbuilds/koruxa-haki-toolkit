@@ -2315,6 +2315,7 @@ async function handle(context) {
 
     const me = await syncOneUser(env, targetId)
     const skills = extractSkillsFromMe(me)
+    await quietlyRefreshLeaderboardDiscord(env)
     return json({
       success: true,
       member: me.username || me.name || target.member_name,
@@ -2367,6 +2368,7 @@ async function handle(context) {
     ).bind(targetId, encrypted.ciphertext, encrypted.iv, now).run()
 
     await writePlayerSnapshot(env, targetId, me)
+    await quietlyRefreshLeaderboardDiscord(env)
 
     return json({
       success: true,
