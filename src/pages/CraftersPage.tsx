@@ -34,6 +34,7 @@ export default function CraftersPage() {
   const [catalog, setCatalog] = useState<SkillAction[]>([])
   const [snapshots, setSnapshots] = useState<any[]>([])
   const [query, setQuery] = useState('')
+  const [selectedSkill, setSelectedSkill] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -45,13 +46,72 @@ export default function CraftersPage() {
     }).catch(console.error)
   }, [])
 
-  const actions = useMemo(() => catalog
-    .filter((action) =>
-      action.is_recipe &&
-      action.skill_key !== 'alchemy' &&
-      (!query || action.reward_label.toLowerCase().includes(query.toLowerCase()))
-    )
-    .slice(0, 100), [catalog, query])
+  const skills = useMemo(() => {
+    const preferredOrder = [
+      'smithing',
+      'crafting',
+      'fletching',
+      'jewelery',
+      'cooking',
+      'herblore',
+      'farming',
+      'construction',
+      'tinkering',
+      'arcana',
+    ]
+
+    const found = [...new Set(
+      catalog
+        .filter((action) => action.is_recipe && action.skill_key !== 'alchemy')
+        .map((action) => action.skill_key),
+    )]
+
+    return found.sort((a, b) => {
+      const ai = preferredOrder.indexOf(a)
+      const bi = preferredOrder.indexOf(b)
+      if (ai !== -1 || bi !== -1) {
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      }
+      return a.localeCompare(b)
+    })
+  }, [catalog])
+
+  useEffect(() => {
+    if (!selectedSkill && skills.length) setSelectedSkill(skills[0])
+  }, [skills, selectedSkill])
+
+  const skillLabel = (skill: string) => {
+    if (skill === 'jewelery') return 'Jewellery'
+    return skill.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+  }
+
+  const actions = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+
+    return catalog
+      .filter((action) => {
+        if (!action.is_recipe || action.skill_key === 'alchemy') return false
+
+        // Searching is deliberately global so a member can find an item
+        // without knowing which skill makes it.
+        if (needle) {
+          return (
+            action.reward_label.toLowerCase().includes(needle) ||
+            action.skill_key.toLowerCase().includes(needle) ||
+            String(action.category ?? '').toLowerCase().includes(needle)
+          )
+        }
+
+        return !selectedSkill || action.skill_key === selectedSkill
+      })
+      .sort((a, b) =>
+        a.skill_key.localeCompare(b.skill_key) ||
+        a.min_level - b.min_level ||
+        a.reward_label.localeCompare(b.reward_label)
+      )
+  }, [catalog, query, selectedSkill])
 
   const candidates = (action: SkillAction): Candidate[] => snapshots
     .map((snapshot) => {
@@ -82,7 +142,30 @@ export default function CraftersPage() {
       </header>
 
       <section className="panel">
-        <input className="search-input" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search an item…" />
+        <div className="crafter-filter-bar">
+          <label>
+            Skill
+            <select value={selectedSkill} onChange={(e) => setSelectedSkill(e.target.value)}>
+              {skills.map((skill) => <option key={skill} value={skill}>{skillLabel(skill)}</option>)}
+            </select>
+          </label>
+
+          <label>
+            Search all skills
+            <input
+              className="search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search any crafted item…"
+            />
+          </label>
+        </div>
+
+        <div className="crafter-filter-summary">
+          <span>{query.trim() ? 'Searching all skills' : selectedSkill ? skillLabel(selectedSkill) : 'Choose a skill'}</span>
+          <strong>{actions.length} result{actions.length === 1 ? '' : 's'}</strong>
+        </div>
+
         <div className="catalog-list">
           {actions.map((action) => {
             const all = candidates(action)
