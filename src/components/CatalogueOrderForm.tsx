@@ -9,6 +9,7 @@ import fletchingHeader from '../../assets/images/orders/fletching-header.png'
 import jewelleryHeader from '../../assets/images/orders/jewellery-header.png'
 import potionsHeader from '../../assets/images/orders/potions-header.png'
 import farmingHeader from '../../assets/images/orders/farming-header.png'
+import fishHeader from '../../assets/images/orders/fish-header.png'
 
 const orderHeaderImages: Record<string, string> = {
   smithing: smithingHeader,
@@ -17,6 +18,7 @@ const orderHeaderImages: Record<string, string> = {
   jewelery: jewelleryHeader,
   herblore: potionsHeader,
   farming: farmingHeader,
+  cooking: fishHeader,
 }
 
 type BasketLine = {
@@ -85,6 +87,9 @@ function preferredGroups(skillKey: string, groups: string[]) {
     herblore: ['Potions','Super Potions','Special Potions','Overloads'],
     farming: ['Seeds','Saplings','Crops & Produce','Herbs','Flowers','Fruit'],
     arcana: ['Runes','Other Arcana'],
+    'logs-seeds': ['Logs','Seeds'],
+    construction: ['Planks','Fixtures','Nails','Other Construction'],
+    tinkering: ['Power Cores','Cells','Mod Kits','Coils','Other Tinkering'],
   }
 
   const ranking = order[skillKey] ?? []
@@ -170,7 +175,13 @@ export default function CatalogueOrderForm({
     return map
   }, [catalog, skillKey])
 
-  const groupNames = preferredGroups(skillKey, [...groups.keys()])
+  const groupNames = skillKey === 'thieving'
+    ? [...groups.keys()].sort((a, b) => {
+        const aLevel = Math.min(...(groups.get(a) ?? []).map((action) => Number(action.min_level || 999)))
+        const bLevel = Math.min(...(groups.get(b) ?? []).map((action) => Number(action.min_level || 999)))
+        return aLevel - bLevel || a.localeCompare(b)
+      })
+    : preferredGroups(skillKey, [...groups.keys()])
   const selectedMaterials = selected ? materialLines(selected, Math.max(1, quantity)) : []
 
   const add = () => {
