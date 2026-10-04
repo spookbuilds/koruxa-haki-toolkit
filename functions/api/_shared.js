@@ -180,6 +180,18 @@ export async function fetchKoruxa(path, token) {
   return data
 }
 
+const KORUXA_SKILL_KEYS = new Set([
+  'attack','strength','defence','hitpoints','ranged','magic',
+  'woodcutting','mining','fishing','cooking','smithing','crafting',
+  'fletching','jewelery','jewellery','herblore','farming','slayer',
+  'arcana','firemaking','alchemy','construction','tinkering',
+])
+
+function canonicalSkillKey(value) {
+  const key = String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  return key === 'jewellery' ? 'jewelery' : key
+}
+
 export function normalizeSkills(value) {
   const raw = Array.isArray(value)
     ? value
@@ -192,24 +204,81 @@ export function normalizeSkills(value) {
 
   return raw
     .map((entry) => {
-      const key = String(
+      const key = canonicalSkillKey(
         entry?.skill_key ??
         entry?.skill ??
         entry?.key ??
         entry?.name ??
+        entry?.skill_name ??
         ''
-      ).trim().toLowerCase().replace(/\s+/g, '_')
+      )
 
       if (!key) return null
 
       return {
         ...entry,
         skill_key: key,
-        level: Number(entry?.level ?? entry?.skill_level ?? entry?.lvl ?? 0),
-        xp: Number(entry?.xp ?? entry?.experience ?? entry?.total_xp ?? 0),
+        level: Number(
+          entry?.level ??
+          entry?.current_level ??
+          entry?.skill_level ??
+          entry?.lvl ??
+          0
+        ),
+        xp: Number(
+          entry?.xp ??
+          entry?.current_xp ??
+          entry?.exact_xp ??
+          entry?.skill_xp ??
+          entry?.experience ??
+          entry?.total_xp ??
+          0
+        ),
       }
     })
     .filter(Boolean)
+}
+
+export function extractSkillsFromMe(me) {
+  if (!me || typeof me !== 'object') return []
+
+  const candidates = []
+  const seen = new Set()
+
+  const inspect = (value, depth = 0) => {
+    if (!value || typeof value !== 'object' || depth > 5 || seen.has(value)) return
+    seen.add(value)
+
+    if (Array.isArray(value)) {
+      const normalized = normalizeSkills(value)
+      const recognized = normalized.filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
+      if (recognized.length) candidates.push(recognized)
+      for (const child of value.slice(0, 40)) inspect(child, depth + 1)
+      return
+    }
+
+    const entries = Object.entries(value)
+    const normalizedKeys = entries.map(([key]) => canonicalSkillKey(key))
+    const knownKeyCount = normalizedKeys.filter((key) => KORUXA_SKILL_KEYS.has(key)).length
+    if (knownKeyCount >= 3) {
+      const normalized = normalizeSkills(value).filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
+      if (normalized.length) candidates.push(normalized)
+    }
+
+    for (const [key, child] of entries) {
+      const normalizedKey = canonicalSkillKey(key)
+      if (['skills','skill_levels','skill_stats','skill_data'].includes(normalizedKey)) {
+        const normalized = normalizeSkills(child).filter((entry) => KORUXA_SKILL_KEYS.has(entry.skill_key))
+        if (normalized.length) candidates.push(normalized)
+      }
+      if (depth < 5 && child && typeof child === 'object') inspect(child, depth + 1)
+    }
+  }
+
+  inspect(me)
+
+  candidates.sort((a, b) => b.length - a.length)
+  return candidates[0] ?? []
 }
 
 export function snapshotFromRow(row) {
@@ -255,7 +324,7 @@ export async function writePlayerSnapshot(env, userId, me) {
       me.is_online ? 1 : 0,
       me.is_premium ? 1 : 0,
       me.rank_badge || null,
-      JSON.stringify(normalizeSkills(me.skills || [])),
+      JSON.stringify(extractSkillsFromMe(me)),
       JSON.stringify(me.equipment || []),
       JSON.stringify(me.farms || []),
       JSON.stringify(me.research || {}),
