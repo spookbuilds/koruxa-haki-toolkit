@@ -182,7 +182,7 @@ export default function AdminPage({ currentProfile, onProfileChanged }: { curren
       </section>
 
       <section className="panel">
-        <div className="panel-title"><div><h2>Order Discord channels</h2><p className="muted">Each order tab can post to its own Discord channel. Enter the numeric channel ID.</p></div></div>
+        <div className="panel-title"><div><h2>Order Discord channels</h2><p className="muted">Each order tab can post to its own Discord channel. Enter the numeric channel ID. The HAKI Toolkit bot needs View Channel, Send Messages and Embed Links for the fancy order cards.</p></div></div>
         {categories.map((category) => <CategoryChannel key={category.id} category={category} onSave={updateCategoryChannel} onTest={testCategoryChannel} />)}
       </section>
 
