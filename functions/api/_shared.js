@@ -313,7 +313,7 @@ export async function sendOrderDiscord(env, orderId, event) {
   const categoryLabel =
     order.category_id === 'ore-gems' ? 'Mining · Ore & Uncut Gems' :
     order.category_id === 'jewelery' ? 'Jewellery · Cut Gems' :
-    categoryLabel
+    order.category_label
 
   const detailLines = lines.map((line) => {
     const emoji = String(line.emoji || '')
