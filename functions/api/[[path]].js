@@ -4,6 +4,7 @@ import {
   clearSessionCookie,
   decryptKoruxaToken,
   encryptKoruxaToken,
+  extractSkillsFromMe,
   fetchKoruxa,
   hmacHex,
   json,
@@ -793,14 +794,38 @@ async function handle(context) {
 
   if (method === 'POST' && joined === 'koruxa/sync-all') {
     await requireUser(context, OFFICER_ROLES)
-    const { results } = await env.DB.prepare('SELECT user_id FROM koruxa_tokens').all()
+    const { results } = await env.DB.prepare(
+      `SELECT k.user_id, COALESCE(u.koruxa_name,u.display_name,u.discord_global_name,u.discord_username,k.user_id) AS member_name
+         FROM koruxa_tokens k
+         JOIN users u ON u.id=k.user_id
+        ORDER BY member_name`
+    ).all()
+
     let synced = 0
+    const members = []
     const failures = []
+
     for (const row of results) {
-      try { await syncOneUser(env, row.user_id); synced += 1 }
-      catch (error) { failures.push({ user_id: row.user_id, error: error instanceof Error ? error.message : 'Unknown error' }) }
+      try {
+        const me = await syncOneUser(env, row.user_id)
+        const skills = extractSkillsFromMe(me)
+        synced += 1
+        members.push({
+          user_id: row.user_id,
+          member: me.username || me.name || row.member_name,
+          skill_count: skills.length,
+          skills: skills.map((entry) => entry.skill_key),
+        })
+      } catch (error) {
+        failures.push({
+          user_id: row.user_id,
+          member: row.member_name,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
     }
-    return json({ success: true, synced, failures })
+
+    return json({ success: true, synced, members, failures })
   }
 
   if (method === 'GET' && joined === 'clan/state') {
