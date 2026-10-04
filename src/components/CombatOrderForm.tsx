@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiGet, apiPut } from '../lib/api'
 import { itemEmoji } from '../data/orderVisuals'
 
-type MonsterIndex = { key: string; name: string }
+type MonsterIndex = { key: string; name: string; slayer_only?: boolean }
 
 type CombatDrop = {
   item: string
@@ -225,6 +225,26 @@ export default function CombatOrderForm({
   const managerResults = monsterIndex
     .filter((monster) => !managerSearch || monster.name.toLowerCase().includes(managerSearch.toLowerCase()))
 
+  const normalMonsterResults = managerResults.filter((monster) => !monster.slayer_only)
+  const slayerMonsterResults = managerResults.filter((monster) => monster.slayer_only)
+
+  const monsterPicker = (items: MonsterIndex[], emptyText: string) => (
+    <div className="combat-monster-picker">
+      {items.length ? items.map((monster) => {
+        const checked = selectedMobs.includes(monster.key)
+        return <button
+          type="button"
+          key={monster.key}
+          className={checked ? 'combat-monster-option selected' : 'combat-monster-option'}
+          onClick={() => setSelectedMobs((current) => checked ? current.filter((key) => key !== monster.key) : [...current, monster.key])}
+        >
+          <span>{checked ? '✓' : '+'}</span>
+          <strong>{monster.name}</strong>
+        </button>
+      }) : <div className="empty">{emptyText}</div>}
+    </div>
+  )
+
   return (
     <div className="catalogue-order-board combat-order-board">
       <div className="board-heading catalogue-heading">
@@ -242,19 +262,23 @@ export default function CombatOrderForm({
             onChange={(event) => setManagerSearch(event.target.value)}
             placeholder="Search monsters…"
           />
-          <div className="combat-monster-picker">
-            {managerResults.map((monster) => {
-              const checked = selectedMobs.includes(monster.key)
-              return <button
-                type="button"
-                key={monster.key}
-                className={checked ? 'combat-monster-option selected' : 'combat-monster-option'}
-                onClick={() => setSelectedMobs((current) => checked ? current.filter((key) => key !== monster.key) : [...current, monster.key])}
-              >
-                <span>{checked ? '✓' : '+'}</span>
-                <strong>{monster.name}</strong>
-              </button>
-            })}
+          <div className="combat-monster-sections">
+            <details className="combat-monster-section" open>
+              <summary>
+                <span>⚔️ Normal monsters</span>
+                <strong>{normalMonsterResults.length}</strong>
+              </summary>
+              {monsterPicker(normalMonsterResults, 'No normal monsters match this search.')}
+            </details>
+
+            <details className="combat-monster-section">
+              <summary>
+                <span>💀 Slayer task monsters</span>
+                <strong>{slayerMonsterResults.length}</strong>
+              </summary>
+              <p className="muted combat-slayer-note">These are task-only Slayer monsters. Select them only if you are happy to farm them when you have the appropriate Slayer task.</p>
+              {monsterPicker(slayerMonsterResults, 'No Slayer monsters match this search.')}
+            </details>
           </div>
           <button type="button" className="primary-button" disabled={savingMobs} onClick={saveMobs}>
             {savingMobs ? 'Saving & loading drops…' : 'Save monsters I will farm'}
