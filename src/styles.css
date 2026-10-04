@@ -3418,3 +3418,29 @@ th { color: #a89daf; font-size: .75rem; letter-spacing: .05em; text-transform: u
     padding: 9px 11px;
   }
 }
+
+
+/* ===== PRESERVE ORDER BOARD BANNER WORDING ===== */
+/* The source artwork is much taller than the compact hero. Stretch it into the
+   banner slot instead of cover-cropping the HAKI / Order Board lettering.
+   A small vertical zoom trims the disposable white border only. */
+.exchange-hero-art img {
+  object-fit: fill;
+  object-position: center;
+  transform: scaleY(1.09);
+  transform-origin: center;
+}
+
+@media (max-width: 900px) {
+  .exchange-hero-art img {
+    object-fit: fill;
+    transform: scaleY(1.09);
+  }
+}
+
+@media (max-width: 720px) {
+  .exchange-hero-art img {
+    object-fit: fill;
+    transform: scaleY(1.08);
+  }
+}
