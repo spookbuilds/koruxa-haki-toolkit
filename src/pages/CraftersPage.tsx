@@ -56,7 +56,8 @@ export default function CraftersPage() {
   const candidates = (action: SkillAction): Candidate[] => snapshots
     .map((snapshot) => {
       const skill = findSkill(snapshot.skills ?? [], action.skill_key)
-      const level = skill ? Number(skill.level ?? skill.skill_level ?? skill.lvl ?? 0) : null
+      const rawLevel = skill ? Number(skill.level ?? skill.skill_level ?? skill.lvl ?? 0) : null
+      const level = rawLevel != null && Number.isFinite(rawLevel) && rawLevel >= 0 && rawLevel <= 150 ? rawLevel : null
       const equippedTool = (snapshot.equipment ?? []).find((entry: any) =>
         normaliseSkillKey(String(entry.slot ?? '').replace(/^tool_/, '')) === normaliseSkillKey(action.skill_key)
       )
