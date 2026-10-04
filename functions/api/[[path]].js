@@ -21,6 +21,7 @@ import {
   requireUser,
   sendOrderDiscord,
   sendDiscordMessage,
+  editDiscordMessage,
   sessionCookie,
   sessionUser,
   snapshotFromRow,
@@ -1317,13 +1318,10 @@ async function handleDiscordCallback(context) {
   return new Response(null, { status: 302, headers })
 }
 
-async function handleLeaderboards(context) {
-  await requireClanUser(context)
-  const url = new URL(context.request.url)
-  const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') || 7)))
-  const latest = await latestSnapshots(context.env)
-
+async function currentLeaderboardRows(env) {
+  const latest = await latestSnapshots(env)
   const bySkill = new Map()
+
   for (const snap of latest) {
     for (const skill of snap.skills || []) {
       const key = String(skill.skill_key)
@@ -1337,11 +1335,190 @@ async function handleLeaderboards(context) {
       })
     }
   }
+
   const current = []
   for (const rows of bySkill.values()) {
     rows.sort((a, b) => b.level - a.level || b.xp - a.xp || a.koruxa_name.localeCompare(b.koruxa_name))
     rows.slice(0, 3).forEach((row, index) => current.push({ ...row, rank: index + 1 }))
   }
+
+  return current
+}
+
+function leaderboardSkillLabel(skillKey) {
+  const labels = {
+    jewelery: 'Jewellery',
+    woodcutting: 'Woodcutting',
+    firemaking: 'Firemaking',
+    tinkering: 'Tinkering',
+  }
+  if (labels[skillKey]) return labels[skillKey]
+  return String(skillKey || '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function leaderboardSkillIcon(skillKey) {
+  const icons = {
+    woodcutting: '🪓',
+    mining: '⛏️',
+    fishing: '🎣',
+    farming: '🌱',
+    thieving: '🥷',
+    cooking: '🍳',
+    smithing: '🔨',
+    crafting: '🧵',
+    fletching: '🏹',
+    jewelery: '💍',
+    herblore: '🧪',
+    arcana: '🔮',
+    firemaking: '🔥',
+    alchemy: '⚗️',
+    construction: '🪚',
+    tinkering: '⚙️',
+    combat: '⚔️',
+  }
+  return icons[skillKey] || '✦'
+}
+
+function leaderboardCategory(skillKey) {
+  if (['woodcutting','mining','fishing','farming','thieving'].includes(skillKey)) return 'Gathering'
+  if (['cooking','smithing','crafting','fletching','jewelery','herblore','arcana','firemaking','alchemy','construction','tinkering'].includes(skillKey)) return 'Artisan'
+  if (['attack','strength','defence','defense','constitution','hitpoints','ranged','magic','combat'].includes(skillKey)) return 'Combat'
+  return 'Other'
+}
+
+function leaderboardDiscordEmbeds(rows) {
+  const medals = ['🥇','🥈','🥉']
+  const groups = new Map()
+
+  for (const row of rows) {
+    const category = leaderboardCategory(row.skill_key)
+    if (!groups.has(category)) groups.set(category, new Map())
+    const skills = groups.get(category)
+    if (!skills.has(row.skill_key)) skills.set(row.skill_key, [])
+    skills.get(row.skill_key).push(row)
+  }
+
+  const categoryMeta = {
+    Gathering: { color: 0x4da8d8, icon: '🌿' },
+    Artisan: { color: 0xd39b4a, icon: '🛠️' },
+    Combat: { color: 0xc95464, icon: '⚔️' },
+    Other: { color: 0x7a6aa6, icon: '✦' },
+  }
+
+  const preferred = ['Gathering','Artisan','Combat','Other']
+  return preferred
+    .filter((category) => groups.has(category))
+    .map((category, index) => {
+      const skills = groups.get(category)
+      const fields = [...skills.entries()]
+        .sort(([a], [b]) => leaderboardSkillLabel(a).localeCompare(leaderboardSkillLabel(b)))
+        .map(([skillKey, leaders]) => ({
+          name: leaderboardSkillIcon(skillKey) + ' ' + leaderboardSkillLabel(skillKey),
+          value: leaders
+            .sort((a, b) => a.rank - b.rank)
+            .slice(0, 3)
+            .map((row, rowIndex) =>
+              medals[rowIndex] + ' **' + String(row.koruxa_name) + '** — Lv. ' + Number(row.level).toLocaleString()
+            )
+            .join('\n') || 'No synced leaders yet',
+          inline: true,
+        }))
+
+      const meta = categoryMeta[category]
+      return {
+        title: index === 0 ? '☠️ HAKI — Clan Skill Leaders' : meta.icon + ' ' + category,
+        description: index === 0
+          ? 'Top 3 clan members in each skill. Updated automatically from HAKI Toolkit.'
+          : undefined,
+        color: meta.color,
+        fields: fields.slice(0, 25),
+        footer: index === preferred.filter((name) => groups.has(name)).length - 1
+          ? { text: 'HAKI Toolkit • Updates when connected member data syncs' }
+          : undefined,
+        timestamp: index === 0 ? new Date().toISOString() : undefined,
+      }
+    })
+}
+
+async function leaderboardDiscordConfig(env) {
+  const row = await env.DB.prepare(
+    "SELECT value_json FROM app_settings WHERE key='leaderboard_discord'"
+  ).first()
+  return parseJson(row?.value_json, { channel_id: '', message_id: '' })
+}
+
+async function saveLeaderboardDiscordConfig(env, config, updatedBy = null) {
+  await env.DB.prepare(
+    `INSERT INTO app_settings (key,value_json,updated_by,updated_at)
+     VALUES ('leaderboard_discord',?,?,?)
+     ON CONFLICT(key) DO UPDATE SET
+       value_json=excluded.value_json,
+       updated_by=excluded.updated_by,
+       updated_at=excluded.updated_at`
+  ).bind(JSON.stringify(config), updatedBy, nowIso()).run()
+}
+
+async function refreshLeaderboardDiscord(env, updatedBy = null) {
+  const config = await leaderboardDiscordConfig(env)
+  const channelId = String(config?.channel_id || '').trim().replace(/^<#(\d+)>$/, '$1')
+  if (!channelId) return { skipped: true, reason: 'Leaderboard Discord channel is not configured' }
+  if (!/^\d{15,25}$/.test(channelId)) throw new HttpError(400, 'Leaderboard Discord channel ID must be the numeric Discord channel ID')
+
+  const rows = await currentLeaderboardRows(env)
+  if (!rows.length) return { skipped: true, reason: 'No synced leaderboard data is available yet' }
+
+  const embeds = leaderboardDiscordEmbeds(rows)
+  let result = null
+  let edited = false
+
+  if (config?.message_id) {
+    try {
+      result = await editDiscordMessage(env, channelId, String(config.message_id), '', [], embeds)
+      edited = true
+    } catch (error) {
+      console.log('Leaderboard Discord edit failed; replacing message', error)
+    }
+  }
+
+  if (!result) {
+    result = await sendDiscordMessage(env, channelId, '', [], embeds)
+  }
+
+  const nextConfig = {
+    channel_id: channelId,
+    message_id: String(result?.id || config?.message_id || ''),
+    updated_at: nowIso(),
+  }
+  await saveLeaderboardDiscordConfig(env, nextConfig, updatedBy)
+
+  return {
+    success: true,
+    channel_id: channelId,
+    message_id: nextConfig.message_id,
+    edited,
+    rows: rows.length,
+    skills: new Set(rows.map((row) => row.skill_key)).size,
+    warning: result?.warning ?? null,
+  }
+}
+
+async function quietlyRefreshLeaderboardDiscord(env) {
+  try {
+    const config = await leaderboardDiscordConfig(env)
+    if (!config?.channel_id) return
+    await refreshLeaderboardDiscord(env)
+  } catch (error) {
+    console.log('Automatic leaderboard Discord refresh failed', error)
+  }
+}
+
+async function handleLeaderboards(context) {
+  await requireClanUser(context)
+  const url = new URL(context.request.url)
+  const days = Math.min(90, Math.max(1, Number(url.searchParams.get('days') || 7)))
+  const current = await currentLeaderboardRows(context.env)
 
   const since = new Date(Date.now() - days * 86400000).toISOString()
   const { results: history } = await context.env.DB.prepare(
