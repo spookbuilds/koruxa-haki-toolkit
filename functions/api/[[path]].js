@@ -41,7 +41,7 @@ function bool(value) {
   return value === true || value === 1 || value === '1'
 }
 
-const WIKI_ORDER_SKILLS = new Set(['smithing','crafting','fletching','jewelery','herblore','farming','arcana'])
+const WIKI_ORDER_SKILLS = new Set(['smithing','crafting','fletching','jewelery','herblore','farming','arcana','cooking','construction','tinkering'])
 const PLANNER_SKILLS = [
   'woodcutting',
   'mining',
@@ -197,16 +197,27 @@ function parseWikiSkillPage(html, skillKey) {
   }))
 }
 
-async function syncWikiSkill(env, skillKey) {
-  if (!WIKI_SKILLS.has(skillKey)) throw new HttpError(400, 'That Koruxa skill is not supported by the planner catalogue')
-  const response = await fetch('https://koruxa.com/wiki/skills/' + skillKey + '.html', {
-    headers: { Accept: 'text/html', 'User-Agent': 'HAKI-Toolkit/1.0' },
-  })
-  if (!response.ok) throw new HttpError(502, 'Koruxa wiki returned ' + response.status + ' for ' + skillKey)
-  const html = await response.text()
-  const actions = parseWikiSkillPage(html, skillKey)
-  if (!actions.length) throw new HttpError(502, 'Could not read the Koruxa ' + skillKey + ' action table')
 
+function parseWikiDropLines(value) {
+  const lines = String(value || '')
+    .split(/\n|<br\s*\/?\s*>/i)
+    .map((line) => decodeHtml(String(line).replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+
+  const items = []
+  for (const line of lines) {
+    let label = line
+      .replace(/\s+\d+(?:[–-]\d+)?\s+(?:Always|\d+(?:\.\d+)?%|\d+\s+in\s+[\d,]+).*$/i, '')
+      .replace(/\s+(?:Always|\d+(?:\.\d+)?%|\d+\s+in\s+[\d,]+).*$/i, '')
+      .trim()
+    if (!label || /^(none|—|-)$/.test(label)) continue
+    if (/^(coins?|gold)$/i.test(label)) continue
+    items.push(label)
+  }
+  return [...new Set(items)]
+}
+
+async function storeOrderActions(env, actions) {
   const now = nowIso()
   for (let i = 0; i < actions.length; i += 75) {
     const chunk = actions.slice(i, i + 75)
@@ -220,11 +231,131 @@ async function syncWikiSkill(env, skillKey) {
          image=excluded.image,is_recipe=excluded.is_recipe,category=excluded.category,ingredients_json=excluded.ingredients_json,
          reward_stats_json=excluded.reward_stats_json,unlock_reqs_json=excluded.unlock_reqs_json,updated_at=excluded.updated_at`
     ).bind(
-      action.action_key, action.skill_key, action.label, action.min_level, action.duration_ms, action.xp, action.amount,
-      action.reward_item_key, action.reward_label, action.image, action.is_recipe ? 1 : 0, action.category,
-      JSON.stringify(action.ingredients), null, null, now,
+      action.action_key, action.skill_key, action.label, Number(action.min_level || 1), Number(action.duration_ms || 0),
+      Number(action.xp || 0), Number(action.amount || 1), action.reward_item_key, action.reward_label,
+      action.image || null, action.is_recipe ? 1 : 0, action.category || null,
+      JSON.stringify(action.ingredients || []), null, null, now,
     )))
   }
+}
+
+async function fetchWikiHtml(path) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 12000)
+  try {
+    const response = await fetch('https://koruxa.com' + path, {
+      headers: { Accept: 'text/html', 'User-Agent': 'HAKI-Toolkit/1.0' },
+      signal: controller.signal,
+    })
+    if (!response.ok) throw new HttpError(502, 'Koruxa wiki returned ' + response.status + ' for ' + path)
+    return await response.text()
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new HttpError(504, 'Koruxa wiki timed out while loading ' + path)
+    throw error
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function syncLogsSeedsCatalogue(env) {
+  const html = await fetchWikiHtml('/wiki/skills/woodcutting.html')
+  const base = parseWikiSkillPage(html, 'woodcutting')
+  const actions = base.map((row) => ({
+    ...row,
+    action_key: 'wiki_logs_seeds_log_' + slugify(row.reward_label),
+    skill_key: 'logs-seeds',
+    category: 'Logs',
+    is_recipe: false,
+    ingredients: [],
+  }))
+
+  const rows = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+  for (const rowHtml of rows) {
+    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => htmlCellText(match[1]))
+    const level = Number.parseInt(cells[0], 10)
+    const source = cells[1]
+    if (!Number.isFinite(level) || !source) continue
+    const rareText = cells[cells.length - 1] || ''
+    for (const seed of parseWikiDropLines(rareText).filter((item) => /\bseed\b/i.test(item))) {
+      actions.push({
+        action_key: 'wiki_logs_seeds_seed_' + slugify(source) + '_' + slugify(seed),
+        skill_key: 'logs-seeds',
+        label: source,
+        min_level: level,
+        duration_ms: 0,
+        xp: 0,
+        amount: 1,
+        reward_item_key: slugify(seed),
+        reward_label: seed,
+        image: null,
+        is_recipe: false,
+        category: 'Seeds',
+        ingredients: [],
+      })
+    }
+  }
+
+  const unique = [...new Map(actions.map((row) => [row.action_key, row])).values()]
+  await storeOrderActions(env, unique)
+  return unique
+}
+
+async function syncThievingCatalogue(env) {
+  const html = await fetchWikiHtml('/wiki/skills/thieving.html')
+  const rows = String(html || '').match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
+  const actions = []
+
+  for (const rowHtml of rows) {
+    const cells = [...rowHtml.matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((match) => htmlCellText(match[1]))
+    const level = Number.parseInt(cells[0], 10)
+    const source = cells[1]
+    if (!Number.isFinite(level) || !source) continue
+
+    const candidates = new Set()
+    if (cells[5] && cells[5] !== '—') {
+      const made = parseWikiQuantityLabel(cells[5].split('\n')[0])
+      if (made.label && !/coins?|gold/i.test(made.label)) candidates.add(made.label)
+    }
+    for (const item of parseWikiDropLines(cells[cells.length - 1] || '')) candidates.add(item)
+
+    for (const item of candidates) {
+      actions.push({
+        action_key: 'wiki_thieving_' + slugify(source) + '_' + slugify(item),
+        skill_key: 'thieving',
+        label: source,
+        min_level: level,
+        duration_ms: 0,
+        xp: 0,
+        amount: 1,
+        reward_item_key: slugify(item),
+        reward_label: item,
+        image: null,
+        is_recipe: false,
+        category: source,
+        ingredients: [],
+      })
+    }
+  }
+
+  if (!actions.length) throw new HttpError(502, 'Could not read the Koruxa Thieving loot table')
+  const unique = [...new Map(actions.map((row) => [row.action_key, row])).values()]
+  await storeOrderActions(env, unique)
+  return unique
+}
+
+async function syncWikiSkill(env, skillKey) {
+  if (skillKey === 'logs-seeds') return syncLogsSeedsCatalogue(env)
+  if (skillKey === 'thieving') return syncThievingCatalogue(env)
+  if (!WIKI_SKILLS.has(skillKey)) throw new HttpError(400, 'That Koruxa skill is not supported by the planner catalogue')
+  const response = await fetch('https://koruxa.com/wiki/skills/' + skillKey + '.html', {
+    headers: { Accept: 'text/html', 'User-Agent': 'HAKI-Toolkit/1.0' },
+  })
+  if (!response.ok) throw new HttpError(502, 'Koruxa wiki returned ' + response.status + ' for ' + skillKey)
+  const html = await response.text()
+  const actions = parseWikiSkillPage(html, skillKey)
+  if (!actions.length) throw new HttpError(502, 'Could not read the Koruxa ' + skillKey + ' action table')
+
+  await storeOrderActions(env, actions)
   return actions
 }
 
